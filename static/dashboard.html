@@ -1,0 +1,898 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Dashboard — SalezX</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <style>
+        *,
+        *::before,
+        *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', sans-serif;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #0f0c29 0%, #1a1a40 40%, #302b63 100%);
+            color: #fff;
+            overflow-x: hidden;
+        }
+
+        .orb {
+            position: fixed;
+            border-radius: 50%;
+            filter: blur(80px);
+            opacity: 0.3;
+            animation: float 8s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        .orb-1 {
+            width: 400px;
+            height: 400px;
+            background: #6c63ff;
+            top: -100px;
+            right: -100px;
+        }
+
+        .orb-2 {
+            width: 250px;
+            height: 250px;
+            background: #00d2ff;
+            bottom: -50px;
+            left: -50px;
+            animation-delay: -4s;
+        }
+
+        @keyframes float {
+
+            0%,
+            100% {
+                transform: translate(0, 0) scale(1);
+            }
+
+            33% {
+                transform: translate(30px, -20px) scale(1.05);
+            }
+
+            66% {
+                transform: translate(-20px, 20px) scale(0.95);
+            }
+        }
+
+        .navbar {
+            position: relative;
+            z-index: 10;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 40px;
+            background: rgba(255, 255, 255, 0.04);
+            backdrop-filter: blur(20px);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        }
+
+        .navbar .brand {
+            font-weight: 700;
+            font-size: 1.2rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .navbar .brand-icon {
+            width: 32px;
+            height: 32px;
+            background: linear-gradient(135deg, #6c63ff, #00d2ff);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .navbar .brand-icon svg {
+            width: 16px;
+            height: 16px;
+            fill: #fff;
+        }
+
+        .logout-btn {
+            padding: 8px 20px;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.12);
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 500;
+            border-radius: 8px;
+            cursor: pointer;
+            text-decoration: none;
+            transition: all 0.2s ease;
+        }
+
+        .logout-btn:hover {
+            background: rgba(255, 80, 80, 0.15);
+            border-color: rgba(255, 80, 80, 0.3);
+        }
+
+        .main {
+            position: relative;
+            z-index: 5;
+            max-width: 1000px;
+            margin: 40px auto;
+            padding: 0 24px;
+            animation: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            opacity: 0;
+            transform: translateY(24px);
+        }
+
+        @keyframes fade-up {
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .greeting {
+            font-size: 1.8rem;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .greeting span {
+            color: #00d2ff;
+        }
+
+        .greeting-sub {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 0.95rem;
+            margin-bottom: 32px;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
+        }
+
+        .info-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 24px;
+            transition: transform 0.25s ease, border-color 0.25s ease;
+        }
+
+        .info-card:hover {
+            transform: translateY(-4px);
+            border-color: rgba(108, 99, 255, 0.3);
+        }
+
+        .info-card .label {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: rgba(255, 255, 255, 0.4);
+            margin-bottom: 8px;
+        }
+
+        .info-card .value {
+            font-size: 1rem;
+            font-weight: 600;
+            word-break: break-all;
+        }
+
+        .info-card .icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin-bottom: 12px;
+            font-size: 1rem;
+        }
+
+        .icon-name {
+            background: rgba(108, 99, 255, 0.15);
+        }
+
+        .icon-email {
+            background: rgba(0, 210, 255, 0.15);
+        }
+
+        .icon-id {
+            background: rgba(255, 111, 216, 0.15);
+        }
+
+        .icon-tenant {
+            background: rgba(0, 200, 83, 0.15);
+            color: #69f0ae;
+        }
+
+        .status-bar {
+            margin-top: 32px;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 20px;
+            background: rgba(0, 200, 83, 0.1);
+            border: 1px solid rgba(0, 200, 83, 0.2);
+            border-radius: 50px;
+            font-size: 0.85rem;
+            color: #69f0ae;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            background: #69f0ae;
+            border-radius: 50%;
+            animation: pulse 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.5;
+                transform: scale(0.8);
+            }
+        }
+
+        .spinner {
+            width: 36px;
+            height: 36px;
+            border: 3px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #6c63ff;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 16px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .onedrive-section {
+            margin-top: 40px;
+            padding-top: 40px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .onedrive-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 24px;
+        }
+
+        .onedrive-title {
+            font-size: 1.4rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .onedrive-title svg {
+            width: 24px;
+            height: 24px;
+            fill: #0078D4;
+        }
+
+        .connect-btn {
+            padding: 10px 24px;
+            background: #0078D4;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            border-radius: 8px;
+            text-decoration: none;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
+            border: none;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .connect-btn:hover {
+            background: #0086F0;
+            transform: translateY(-2px);
+            color: #fff;
+            text-decoration: none;
+        }
+
+        /* Premium Folder Picker UI */
+        .folder-setup-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 16px;
+            padding: 32px;
+        }
+
+        .folder-setup-title {
+            font-size: 1.2rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            color: #fff;
+        }
+
+        .folder-setup-desc {
+            color: rgba(255, 255, 255, 0.6);
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+            line-height: 1.6;
+        }
+
+        .folder-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 8px;
+        }
+
+        .folder-grid::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        .folder-grid::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.2);
+            border-radius: 10px;
+        }
+
+        .folder-item {
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            user-select: none;
+        }
+
+        .folder-item:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .folder-item.selected {
+            background: rgba(0, 120, 212, 0.15);
+            border-color: #0078D4;
+            box-shadow: 0 4px 15px rgba(0, 120, 212, 0.2);
+        }
+
+        .folder-icon {
+            font-size: 32px;
+            margin-bottom: 12px;
+            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.2));
+        }
+
+        .folder-name {
+            font-weight: 600;
+            font-size: 0.95rem;
+            word-break: break-word;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+
+        .folder-meta {
+            font-size: 0.8rem;
+            color: rgba(255, 255, 255, 0.4);
+        }
+
+        .action-row {
+            display: flex;
+            justify-content: flex-end;
+            padding-top: 24px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .btn-submit {
+            padding: 12px 32px;
+            background: #0078D4;
+            color: #fff;
+            font-family: 'Inter', sans-serif;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            opacity: 0.5;
+            pointer-events: none;
+            transition: all 0.2s;
+        }
+
+        .btn-submit.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .btn-submit.active:hover {
+            background: #0086F0;
+            transform: translateY(-2px);
+            box-shadow: 0 6px 16px rgba(0, 120, 212, 0.3);
+        }
+
+        /* Connected Files UI */
+        .connected-banner {
+            background: rgba(0, 200, 83, 0.1);
+            border: 1px solid rgba(0, 200, 83, 0.2);
+            border-radius: 12px;
+            padding: 24px;
+            margin-bottom: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-list {
+            margin-top: 24px;
+            background: rgba(255, 255, 255, 0.03);
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            overflow: hidden;
+        }
+
+        .file-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 20px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+            transition: background 0.2s;
+        }
+
+        .file-item:last-child {
+            border-bottom: none;
+        }
+
+        .file-item:hover {
+            background: rgba(255, 255, 255, 0.06);
+        }
+
+        .file-icon-small {
+            font-size: 1.5rem;
+            margin-right: 16px;
+        }
+
+        .file-name-small {
+            font-weight: 500;
+            font-size: 0.95rem;
+            color: #fff;
+        }
+
+        .file-meta-small {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.8rem;
+            margin-top: 4px;
+        }
+
+        .download-btn {
+            color: #64B5F6;
+            text-decoration: none;
+            font-size: 0.85rem;
+            font-weight: 600;
+            background: rgba(100, 181, 246, 0.1);
+            padding: 8px 16px;
+            border-radius: 8px;
+            transition: all 0.2s;
+        }
+
+        .download-btn:hover {
+            background: rgba(100, 181, 246, 0.2);
+            transform: translateY(-1px);
+        }
+    </style>
+</head>
+
+<body>
+    <div class="orb orb-1"></div>
+    <div class="orb orb-2"></div>
+
+    <nav class="navbar">
+        <div class="brand">
+            <div class="brand-icon">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+                </svg>
+            </div>
+            SalezX
+        </div>
+        <a href="/auth/logout" class="logout-btn">Sign out</a>
+    </nav>
+
+    <div class="main" id="main-content">
+        <div style="text-align: center; padding: 80px 0;">
+            <div class="spinner"></div>
+            <div style="color: rgba(255,255,255,0.5);">Loading your profile...</div>
+        </div>
+    </div>
+
+    <script>
+        let currentUser = null;
+        let selectedFolderInfo = null;
+
+        async function loadUser() {
+            try {
+                const res = await fetch("/api/me");
+                if (!res.ok) { window.location.href = "/"; return; }
+                const user = await res.json();
+                currentUser = user;
+
+                document.getElementById("main-content").innerHTML = `
+                    <h1 class="greeting">Welcome back, <span>${user.name || "User"}</span> 👋</h1>
+                    <p class="greeting-sub">You're signed in securely with Microsoft Identity.</p>
+
+                    <div class="cards">
+                        <div class="info-card">
+                            <div class="icon icon-name">👤</div>
+                            <div class="label">Full Name</div>
+                            <div class="value">${user.name || "—"}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="icon icon-email">✉️</div>
+                            <div class="label">Email Address</div>
+                            <div class="value">${user.email || "—"}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="icon icon-id">🆔</div>
+                            <div class="label">User ID</div>
+                            <div class="value" style="font-size: 0.85rem;">${user.ms_id || "—"}</div>
+                        </div>
+                        <div class="info-card">
+                            <div class="icon icon-tenant">🏢</div>
+                            <div class="label">Tenant ID</div>
+                            <div class="value" style="font-size: 0.85rem;">${user.tenant_id || "—"}</div>
+                        </div>
+                    </div>
+
+                    <div class="status-bar">
+                        <div class="status-dot"></div>
+                        Authenticated & Active
+                    </div>
+
+                    <div class="onedrive-section">
+                        <div class="onedrive-header">
+                            <div class="onedrive-title">
+                                <svg viewBox="0 0 24 24"><path d="M19.14 7.5A4.5 4.5 0 0 0 10.5 7v.2A4.2 4.2 0 0 0 8.2 6.5a4.3 4.3 0 0 0-4.3 4.3c0 .35.05.69.13 1.03A5 5 0 0 0 2 16.5 4.5 4.5 0 0 0 6.5 21h11a4.5 4.5 0 0 0 4.5-4.5 4.5 4.5 0 0 0-2.86-4z" fill="#0078D4"/></svg>
+                                OneDrive Integration
+                            </div>
+                        </div>
+                        <div id="onedrive-content"></div>
+                    </div>
+                `;
+
+                if (user.connected_folders && user.connected_folders.length > 0) {
+                    showConnectedUI();
+                } else if (user.onedrive_connected) {
+                    showFolderPicker();
+                } else {
+                    document.getElementById("onedrive-content").innerHTML = `
+                        <div class="folder-setup-card" style="text-align: center;">
+                            <div style="font-size: 3rem; margin-bottom: 20px;">🔗</div>
+                            <h3 class="folder-setup-title">Connect your OneDrive Account</h3>
+                            <p class="folder-setup-desc">
+                                We need access to your OneDrive to securely sync documents. <br>
+                                You will be able to choose specific folders for us to access.
+                            </p>
+                            <a href="/onedrive/connect" class="connect-btn">
+                                Proceed to Microsoft Login
+                            </a>
+                        </div>
+                    `;
+                }
+
+            } catch (err) {
+                console.error("Failed to load user:", err);
+                window.location.href = "/";
+            }
+        }
+
+        async function showFolderPicker() {
+            const container = document.getElementById("onedrive-content");
+            container.innerHTML = `
+                <div class="folder-setup-card">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
+                        <div>
+                            <h3 class="folder-setup-title">Select a folder to connect</h3>
+                            <p class="folder-setup-desc" style="margin-bottom: 0;">
+                                Choose a specific folder you want SalezX to access.
+                            </p>
+                        </div>
+                        <div style="padding: 8px 16px; background: rgba(0, 200, 83, 0.1); border-radius: 8px; color: #69f0ae; font-size: 0.9rem; font-weight: 600;">
+                            ✓ Account Authorized
+                        </div>
+                    </div>
+
+                    <div id="folder-loading" style="text-align: center; padding: 40px 0; color: rgba(255,255,255,0.5);">
+                        <div class="spinner" style="width: 24px; height: 24px; border-width: 2px;"></div>
+                        Loading your folders...
+                    </div>
+                    
+                    <div id="folder-grid" class="folder-grid" style="display: none;"></div>
+
+                    <div class="action-row" style="display: flex; justify-content: space-between;">
+                        <button class="btn-submit" style="background: rgba(255,255,255,0.1); color: #fff; opacity: 1; pointer-events: auto;" onclick="showConnectedUI()">Cancel</button>
+                        <button id="btn-submit" class="btn-submit" onclick="submitFolder()">Connect Selected Folder</button>
+                    </div>
+                </div>
+            `;
+
+            try {
+                const res = await fetch("/api/onedrive/folders");
+                const data = await res.json();
+
+                document.getElementById('folder-loading').style.display = 'none';
+                const grid = document.getElementById('folder-grid');
+                grid.style.display = 'grid';
+
+                if (!data.folders || data.folders.length === 0) {
+                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 30px; color: rgba(255,255,255,0.5);">No folders found in your OneDrive root.</div>';
+                    return;
+                }
+
+                let html = '';
+                data.folders.forEach(f => {
+                    const fStr = encodeURIComponent(JSON.stringify(f));
+                    html += `
+                        <div class="folder-item" id="folder-${f.id}" onclick="selectFolder('${fStr}', '${f.id}')">
+                            <div class="folder-icon">📁</div>
+                            <div class="folder-name">${f.name}</div>
+                            <div class="folder-meta">${f.child_count} items</div>
+                        </div>
+                    `;
+                });
+                grid.innerHTML = html;
+
+            } catch (err) {
+                document.getElementById('folder-loading').innerHTML = '<div style="color: #ff5252;">Error loading folders.</div>';
+            }
+        }
+
+        let selectedFolderInfos = [];
+
+        function selectFolder(folderStr, domId) {
+            const folderInfo = JSON.parse(decodeURIComponent(folderStr));
+            const el = document.getElementById('folder-' + domId);
+
+            const index = selectedFolderInfos.findIndex(f => f.id === folderInfo.id);
+            if (index > -1) {
+                selectedFolderInfos.splice(index, 1);
+                el.classList.remove('selected');
+            } else {
+                selectedFolderInfos.push(folderInfo);
+                el.classList.add('selected');
+            }
+
+            const btn = document.getElementById('btn-submit');
+            if (selectedFolderInfos.length > 0) {
+                btn.classList.add('active');
+                btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
+            } else {
+                btn.classList.remove('active');
+                btn.innerText = 'Connect Selected Folders';
+            }
+        }
+
+        async function submitFolder() {
+            if (selectedFolderInfos.length === 0) return;
+            const btn = document.getElementById('btn-submit');
+            btn.classList.remove('active');
+            btn.innerText = 'Connecting...';
+
+            try {
+                let allOk = true;
+                for (const info of selectedFolderInfos) {
+                    const res = await fetch("/api/onedrive/connect-folder", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            folder_id: info.id,
+                            name: info.name,
+                            drive_id: info.drive_id,
+                            item_id: info.item_id
+                        })
+                    });
+                    if (!res.ok) {
+                        allOk = false;
+                        break;
+                    }
+                }
+
+                if (allOk) {
+                    selectedFolderInfos = []; // reset state
+                    loadUser(); // Refresh UI
+                } else {
+                    alert("Failed to connect one or more folders");
+                    btn.classList.add('active');
+                    btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
+                }
+            } catch (err) {
+                alert("Error connecting folders");
+                btn.classList.add('active');
+                btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
+            }
+        }
+
+        let activeFolderId = null;
+
+        function showConnectedUI() {
+            const container = document.getElementById("onedrive-content");
+            const folders = currentUser.connected_folders || [];
+
+            if (folders.length === 0) {
+                showFolderPicker();
+                return;
+            }
+
+            let html = `
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px;">
+                    <h3 style="font-size: 1.2rem; font-weight: 600;">Your Connected Folders</h3>
+                    <button onclick="showFolderPicker()" class="connect-btn" style="padding: 8px 16px; font-size: 0.85rem;">
+                        + Connect Another Folder
+                    </button>
+                </div>
+                <div style="display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 16px; margin-bottom: 32px;">
+            `;
+
+            folders.forEach((f, idx) => {
+                html += `
+                    <div class="folder-setup-card" style="padding: 20px; cursor: pointer; transition: all 0.2s;" 
+                         onclick="selectActiveFolder('${f.item_id}', '${f.folder_name}')" id="card-${f.item_id}">
+                        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px;">
+                            <div style="font-size: 24px;">📁</div>
+                            <button onclick="event.stopPropagation(); disconnectFolder('${f.item_id}')" 
+                                    style="background: transparent; border: 1px solid rgba(255,80,80,0.3); color: #ff6b6b; padding: 4px 8px; border-radius: 6px; cursor: pointer; font-size: 0.75rem; transition: all 0.2s;">
+                                Disconnect
+                            </button>
+                        </div>
+                        <div style="font-weight: 600; font-size: 1rem; color: #fff; margin-bottom: 4px; word-break: break-all;">${f.folder_name}</div>
+                        <div style="font-size: 0.8rem; color: #69f0ae;">✓ Active Sync</div>
+                    </div>
+                `;
+            });
+
+            html += `
+                </div>
+                <div id="active-folder-view" style="display: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 32px;">
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin: 0;" id="active-folder-title">📄 Files</h3>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; color: rgba(255,255,255,0.7);">
+                            <input type="checkbox" id="recursive-toggle" onchange="fetchConnectedFiles()" style="accent-color: #0078D4;">
+                            Show files in subfolders
+                        </label>
+                    </div>
+                    <div id="file-results"><div style="opacity: 0.6; padding: 20px 0;">Select a folder above to view files...</div></div>
+                </div>
+            `;
+
+            container.innerHTML = html;
+
+            // Automatically select the first folder if none active
+            if (folders.length > 0) {
+                if (!activeFolderId || !folders.find(f => f.item_id === activeFolderId)) {
+                    activeFolderId = folders[0].item_id;
+                    selectActiveFolder(activeFolderId, folders[0].folder_name);
+                } else {
+                    // Re-select currently active one
+                    const activeFolder = folders.find(f => f.item_id === activeFolderId);
+                    selectActiveFolder(activeFolderId, activeFolder.folder_name);
+                }
+            }
+        }
+
+        function selectActiveFolder(folderId, folderName) {
+            activeFolderId = folderId;
+
+            // Highlight the selected card
+            document.querySelectorAll('[id^="card-"]').forEach(el => {
+                el.style.border = '1px solid rgba(255, 255, 255, 0.08)';
+                el.style.background = 'rgba(255, 255, 255, 0.03)';
+            });
+            const selectedCard = document.getElementById(`card-${folderId}`);
+            if (selectedCard) {
+                selectedCard.style.border = '1px solid #0078D4';
+                selectedCard.style.background = 'rgba(0, 120, 212, 0.1)';
+            }
+
+            // Show the files view
+            document.getElementById('active-folder-view').style.display = 'block';
+            document.getElementById('active-folder-title').innerText = `📄 Files in ${folderName}`;
+
+            fetchConnectedFiles();
+        }
+
+        async function fetchConnectedFiles() {
+            if (!activeFolderId) return;
+
+            try {
+                const isRecursive = document.getElementById('recursive-toggle')?.checked || false;
+                const url = `/api/onedrive/files?folder_id=${activeFolderId}${isRecursive ? '&recursive=true' : ''}`;
+
+                document.getElementById('file-results').innerHTML = '<div style="opacity: 0.6; padding: 20px 0;">Loading files...</div>';
+
+                const res = await fetch(url);
+                const data = await res.json();
+
+                const container = document.getElementById('file-results');
+                if (data.files && data.files.length > 0) {
+                    let html = '<div class="file-list">';
+                    data.files.forEach(f => {
+                        const icon = f.folder ? '📁' : '📄';
+                        const isFolder = !!f.folder;
+
+                        html += `
+                            <div class="file-item">
+                                <div style="display: flex; align-items: center;">
+                                    <div class="file-icon-small">${icon}</div>
+                                    <div>
+                                        <div class="file-name-small">${f.name}</div>
+                                        <div class="file-meta-small">${f.size || 0} bytes ${f.parentReference && f.parentReference.path ? ` • ${f.parentReference.path.replace('/drive/root:/', '').split('/').pop()}` : ''}</div>
+                                    </div>
+                                </div>
+                                ${!isFolder ? `<a href="/api/onedrive/download/${f.id}" class="download-btn" target="_blank">Download</a>` : '<span style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Folder</span>'}
+                            </div>
+                        `;
+                    });
+                    html += '</div>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<div style="padding: 32px; text-align: center; opacity: 0.6; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">This folder is empty.</div>';
+                }
+            } catch (err) {
+                document.getElementById('file-results').innerHTML = '<div style="color: #ff5252;">Failed to load files.</div>';
+            }
+        }
+
+        async function disconnectFolder(folderId) {
+            try {
+                const btn = document.querySelector(`#card-${folderId} button`);
+                if (btn) btn.innerText = 'Removing...';
+
+                const res = await fetch("/api/onedrive/disconnect", {
+                    method: "POST",
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ folder_id: folderId })
+                });
+
+                if (res.ok) {
+                    if (activeFolderId === folderId) activeFolderId = null;
+                    loadUser();
+                } else {
+                    alert("Failed to disconnect folder");
+                    if (btn) btn.innerText = 'Disconnect';
+                }
+            } catch (err) {
+                alert("Error disconnecting folder");
+            }
+        }
+
+        loadUser();
+    </script>
+</body>
+
+</html>

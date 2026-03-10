@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Salezx Database & UI Diagram</title>
+    <script type="module">
+        import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
+        mermaid.initialize({ startOnLoad: true, theme: 'default' });
+    </script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            margin: 0;
+            padding: 40px;
+            background-color: #f8f9fa;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            text-align: center;
+            color: #2c3e50;
+        }
+
+        h2 {
+            margin-top: 50px;
+            color: #2980b9;
+            border-bottom: 2px solid #ecf0f1;
+            padding-bottom: 10px;
+        }
+
+        .mermaid {
+            display: flex;
+            justify-content: center;
+            margin-top: 20px;
+            margin-bottom: 40px;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="container">
+        <h1>Salezx Architecture Diagrams</h1>
+        <p style="text-align: center; color: #7f8c8d;">This page automatically renders the visual diagrams for your UI
+            flow and Database Schema.</p>
+
+        <h2>1. UI Action to Database Flowchart</h2>
+        <div class="mermaid">
+            flowchart TD
+            %% Styling
+            classDef ui fill:#3498db,stroke:#2980b9,color:#fff;
+            classDef backend fill:#2c3e50,stroke:#1a252f,color:#fff;
+            classDef db fill:#27ae60,stroke:#2ecc71,color:#fff;
+
+            %% Client / UI Layer
+            subgraph UI ["User Interface (Frontend)"]
+            LoginScreen[/"Login Screen"/]:::ui
+            Dashboard[/"Dashboard"/]:::ui
+            AuthAction("Click 'Connect Microsoft'"):::ui
+            FolderAction("Select Folders to Sync"):::ui
+            DisconnectAction("Click 'Disconnect Folder'"):::ui
+            end
+
+            %% Backend Layer
+            subgraph Backend ["Python Backend Service"]
+            OAuthRoute("Microsofot OAuth API"):::backend
+            ConnectRoute("API: /connect-folder"):::backend
+            DisconnectRoute("API: /disconnect"):::backend
+            Webhook("Webhook Receiver (Changes)"):::backend
+            Worker("Background Document Sync"):::backend
+            end
+
+            %% Database Storage Layer
+            subgraph Database ["PostgreSQL"]
+            OrgTable[("ORGANIZATIONS")]:::db
+            UserTable[("USERS")]:::db
+            ConnTable[("ONEDRIVE_CONNECTIONS")]:::db
+            FolderTable[("TRACKED_FOLDERS")]:::db
+            DocTable[("DOCUMENTS")]:::db
+            EmbedTable[("DOCUMENT_EMBEDDINGS")]:::db
+            end
+
+            %% Flow Connections
+            LoginScreen --> |"Admin signs up"| OrgTable
+            LoginScreen --> |"User logs in"| UserTable
+
+            Dashboard --> AuthAction
+            AuthAction --> OAuthRoute
+            OAuthRoute --> |"Encrypts Access Token"| ConnTable
+
+            Dashboard --> FolderAction
+            FolderAction --> ConnectRoute
+            ConnectRoute --> |"Saves Folder ID & Webhook"| FolderTable
+
+            Webhook --> |"Delta API detects new file"| Worker
+            Worker --> |"Saves File Metadata"| DocTable
+            Worker --> |"Extracts Text, Embeds & Encrypts"| EmbedTable
+
+            Dashboard --> DisconnectAction
+            DisconnectAction --> DisconnectRoute
+            DisconnectRoute --> |"Cascading Deletion"| FolderTable
+            FolderTable -.-> |"Auto-Deletes"| DocTable
+            DocTable -.-> |"Auto-Deletes"| EmbedTable
+        </div>
+
+        <h2>2. Entity-Relationship Database Schema</h2>
+        <div class="mermaid">
+            erDiagram
+            ORGANIZATIONS {
+            UUID id PK
+            VARCHAR name
+            VARCHAR tenant_id
+            VARCHAR client_id
+            TIMESTAMP created_at
+            }
+
+            USERS {
+            UUID id PK
+            UUID organization_id FK
+            VARCHAR email
+            VARCHAR name
+            VARCHAR role
+            TIMESTAMP created_at
+            }
+
+            ONEDRIVE_CONNECTIONS {
+            UUID id PK
+            UUID organization_id FK
+            UUID user_id FK
+            VARCHAR drive_id
+            VARCHAR access_type "full_access | specific_folders"
+            TEXT access_token "Encrypted"
+            TEXT refresh_token "Encrypted"
+            TIMESTAMP token_expires_at
+            }
+
+            TRACKED_FOLDERS {
+            UUID id PK
+            UUID organization_id FK
+            UUID onedrive_connection_id FK
+            VARCHAR folder_id "Graph Item ID"
+            VARCHAR folder_name
+            TEXT delta_link
+            VARCHAR subscription_id
+            BOOLEAN is_active
+            }
+
+            DOCUMENTS {
+            UUID id PK
+            UUID organization_id FK
+            UUID onedrive_connection_id FK
+            UUID tracked_folder_id FK
+            VARCHAR file_id "Graph Item ID"
+            VARCHAR file_name
+            VARCHAR mime_type
+            BIGINT size_bytes
+            TIMESTAMP last_modified_at
+            }
+
+            DOCUMENT_EMBEDDINGS {
+            UUID id PK
+            UUID organization_id FK
+            UUID onedrive_connection_id FK
+            UUID document_id FK
+            INTEGER chunk_index
+            TEXT text_content "Encrypted"
+            VECTOR embedding "1536 dimensions"
+            }
+
+            %% Relationships
+            ORGANIZATIONS ||--o{ USERS : "has members"
+            ORGANIZATIONS ||--o{ ONEDRIVE_CONNECTIONS : "owns connections"
+            USERS ||--o{ ONEDRIVE_CONNECTIONS : "authenticates"
+            ONEDRIVE_CONNECTIONS ||--o{ TRACKED_FOLDERS : "contains"
+            TRACKED_FOLDERS ||--o{ DOCUMENTS : "stores"
+            DOCUMENTS ||--o{ DOCUMENT_EMBEDDINGS : "is split into"
+        </div>
+    </div>
+
+</body>
+
+</html>
