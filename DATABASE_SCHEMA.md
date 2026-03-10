@@ -1,14 +1,12 @@
-# PostgreSQL Database Schema Design
+# PostgreSQL Database Schema Design (Finalized Names)
 
-Based on your requirements, here is a robust, production-ready PostgreSQL table structure. It uses UUIDs for primary keys, foreign keys for strict relationships, and includes standard audit timestamps (`created_at`, `updated_at`). 
-
-It also assumes you might use `pgvector` for storing the embeddings.
+This schema uses `companies` instead of `organizations` and `employee` instead of `users`, as requested. It maintains the full integration requirements for OneDrive and vector embeddings.
 
 ## Entity Relationship Diagram (Conceptual)
-1. **Organization** (1) -> (M) **Users**
-2. **Organization** (1) -> (M) **OneDrive Connections**
+1. **Companies** (1) -> (M) **Employees**
+2. **Companies** (1) -> (M) **OneDrive Connections**
 3. **OneDrive Connection** (1) -> (M) **Tracked Folders**
-4. **Tracked Folder** (1) -> (M) **Documents**
+4. **Companies** (1) -> (M) **Documents**
 5. **Document** (1) -> (M) **Document Embeddings**
 
 ---
@@ -20,53 +18,55 @@ It also assumes you might use `pgvector` for storing the embeddings.
 CREATE EXTENSION IF NOT EXISTS vector;
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
--- 1. ORGANIZATIONS
-CREATE TABLE organizations (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name VARCHAR(255) NOT NULL,
-    tenant_id VARCHAR(255),
-    client_id VARCHAR(255),
+-- 1. COMPANIES
+CREATE TABLE companies (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),          -- Plaintext (Relational ID)
+    name TEXT NOT NULL,                                      -- ENCRYPTED (AES-256-GCM + Base64)
+    tenant_id TEXT,                                          -- ENCRYPTED (AES-256-GCM + Base64)
+    client_id TEXT,                                          -- ENCRYPTED (AES-256-GCM + Base64)
+    primary_email TEXT,                                      -- ENCRYPTED (AES-256-GCM + Base64)
+    domain TEXT,                                             -- ENCRYPTED (AES-256-GCM + Base64)
+    total_quota BIGINT DEFAULT 0,                            -- Plaintext (Number)
+    consumed_quota BIGINT DEFAULT 0,                         -- Plaintext (Number)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- 2. USERS
-CREATE TABLE users (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    email VARCHAR(255) UNIQUE NOT NULL,
-    name VARCHAR(255),
-    role VARCHAR(50) DEFAULT 'member', -- e.g., admin, member
+-- 2. EMPLOYEE
+CREATE TABLE employee (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),          -- Plaintext (Relational ID)
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    email TEXT UNIQUE NOT NULL,                              -- ENCRYPTED (AES-256-GCM + Base64)
+    name TEXT,                                               -- ENCRYPTED (AES-256-GCM + Base64)
+    role TEXT DEFAULT 'member',                              -- Plaintext (Standard Roles)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 3. ONEDRIVE CONNECTIONS
--- Represents an authenticated link to a OneDrive Drive
 CREATE TABLE onedrive_connections (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    user_id UUID NOT NULL REFERENCES users(id) ON DELETE SET NULL, -- Who authenticated this
-    drive_id VARCHAR(255) NOT NULL,
-    access_type VARCHAR(50) NOT NULL DEFAULT 'specific_folders' CHECK (access_type IN ('full_access', 'specific_folders')),
-    access_token TEXT,  -- Consider encrypting these at rest
-    refresh_token TEXT, -- Consider encrypting these at rest
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
+    employee_id UUID NOT NULL REFERENCES employee(id) ON DELETE SET NULL,
+    drive_id TEXT NOT NULL,                                  -- ENCRYPTED (AES-256-GCM + Base64)
+    access_type TEXT NOT NULL DEFAULT 'specific_folders',    -- ENCRYPTED (AES-256-GCM + Base64)
+    access_token TEXT,                                       -- ENCRYPTED (AES-256-GCM + Base64)
+    refresh_token TEXT,                                      -- ENCRYPTED (AES-256-GCM + Base64)
     token_expires_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE(organization_id, drive_id)
+    UNIQUE(company_id, drive_id)
 );
 
 -- 4. TRACKED FOLDERS
--- Specific folders inside a OneDrive connection that the user selected
 CREATE TABLE tracked_folders (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     onedrive_connection_id UUID NOT NULL REFERENCES onedrive_connections(id) ON DELETE CASCADE,
-    folder_id VARCHAR(255) NOT NULL, -- Microsoft Graph Item ID
-    folder_name VARCHAR(255) NOT NULL,
-    delta_link TEXT, -- To track changes using Microsoft's Delta API
-    subscription_id VARCHAR(255), -- Webhook subscription ID
+    folder_id TEXT NOT NULL,                                 -- ENCRYPTED (AES-256-GCM + Base64)
+    folder_name TEXT NOT NULL,                               -- ENCRYPTED (AES-256-GCM + Base64)
+    delta_link TEXT,                                         -- ENCRYPTED (AES-256-GCM + Base64)
+    subscription_id TEXT,                                    -- ENCRYPTED (AES-256-GCM + Base64)
     subscription_expires_at TIMESTAMP WITH TIME ZONE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -75,49 +75,67 @@ CREATE TABLE tracked_folders (
 );
 
 -- 5. DOCUMENTS
--- The actual files discovered inside the tracked folders
 CREATE TABLE documents (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     onedrive_connection_id UUID NOT NULL REFERENCES onedrive_connections(id) ON DELETE CASCADE,
     tracked_folder_id UUID NOT NULL REFERENCES tracked_folders(id) ON DELETE CASCADE,
-    file_id VARCHAR(255) NOT NULL, -- Microsoft Graph Item ID
-    file_name VARCHAR(255) NOT NULL,
-    mime_type VARCHAR(100),
-    size_bytes BIGINT,
-    last_modified_at TIMESTAMP WITH TIME ZONE, -- Microsoft Graph LastModifiedDateTime
+    file_id TEXT NOT NULL,                                   -- ENCRYPTED (AES-256-GCM + Base64)
+    file_name TEXT NOT NULL,                                 -- ENCRYPTED (AES-256-GCM + Base64)
+    mime_type TEXT,                                          -- ENCRYPTED (AES-256-GCM + Base64)
+    size_bytes BIGINT,                                       -- Plaintext (Size)
+    last_modified_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(tracked_folder_id, file_id)
 );
 
 -- 6. DOCUMENT EMBEDDINGS
--- The text chunks extracted from documents, converted to vector embeddings
 CREATE TABLE document_embeddings (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    organization_id UUID NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
+    company_id UUID NOT NULL REFERENCES companies(id) ON DELETE CASCADE,
     onedrive_connection_id UUID NOT NULL REFERENCES onedrive_connections(id) ON DELETE CASCADE,
     document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
-    chunk_index INTEGER NOT NULL, -- If a document is split into multiple parts
-    text_content TEXT NOT NULL,   -- The raw scraped text
-    embedding VECTOR(1536),       -- Adjust dimensions based on your AI model (e.g. 1536 for OpenAI)
+    chunk_index INTEGER NOT NULL, 
+    text_content TEXT NOT NULL,                              -- ENCRYPTED (AES-256-GCM + Base64)
+    embedding VECTOR(1536),                                  -- Plaintext (Required for Similarity search)
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- INDEXES (Crucial for query performance)
-CREATE INDEX idx_users_org ON users(organization_id);
-CREATE INDEX idx_onedrive_org ON onedrive_connections(organization_id);
+-- INDEXES
+CREATE INDEX idx_employee_company ON employee(company_id);
+CREATE INDEX idx_onedrive_company ON onedrive_connections(company_id);
 CREATE INDEX idx_folders_conn ON tracked_folders(onedrive_connection_id);
 CREATE INDEX idx_docs_folder ON documents(tracked_folder_id);
 CREATE INDEX idx_embeddings_doc ON document_embeddings(document_id);
-CREATE INDEX idx_embeddings_org ON document_embeddings(organization_id);
-
--- Optional: Vector similarity search index (pgvector HNSW)
+CREATE INDEX idx_embeddings_company ON document_embeddings(company_id);
 CREATE INDEX idx_embeddings_vector ON document_embeddings USING hnsw (embedding vector_cosine_ops);
 ```
 
-## Why this structure is perfectly suited for you:
-1. **Cascading Deletes:** Notice the `ON DELETE CASCADE`. If a user disconnects an organization, or disconnects a `tracked_folder`, PostgreSQL will **automatically** delete all associated `documents` and `document_embeddings`. You won't have to manually write clean-up scripts!
-2. **Delta Links:** The `delta_link` and webhook Data is safely stored per folder inside the `tracked_folders` table, replacing your current hardcoded in-memory session.
-3. **Multi-Tenancy:** Every crucial table is linked back to `organization_id`. This means you can trivially filter any query `WHERE organization_id = '...'` to guarantee one company's data never leaks into another company's view.
-4. **Vector Search Ready:** Utilizing the `pgvector` extension directly in PostgreSQL so you don't need a separate expensive database like Pinecone just for embeddings.
+## Best Standard Encryption Strategy: AES-256-GCM
+
+To ensure "even the developers cannot see the data," we use **Application-Side Encryption**. This means the data is encrypted in Python **before** it touches the database, and decrypted in Python **after** it is read.
+
+### 1. The Standard: AES-256-GCM
+*   **AES (Advanced Encryption Standard)**: The gold standard for symmetric encryption.
+*   **256-bit Key**: Extremely secure (government-grade).
+*   **GCM (Galois/Counter Mode)**: Provides both **confidentiality** and **authenticity** (it ensures the data hasn't been tampered with).
+
+### 2. Implementation Logic
+*   **Master Key**: A single 32-byte key stored securely in your `.env`.
+*   **Initialization Vector (IV)**: A unique, random 12-byte value prepended to every encrypted string. This ensures that the same name (e.g., "John") results in a different encrypted blob every time.
+*   **Storage**: In PostgreSQL, all encrypted columns are set to **`TEXT`** type to hold the Base64-encoded encrypted strings.
+    - **Visibility**: This allows you to see the encrypted data as random characters in your database tools.
+    - **Convenience**: Base64 is the standard way to represent binary encryption in text-based environments.
+
+### 3. What is NOT Encrypted (and why)
+| Column Type | Encryption Status | Rationale |
+| :--- | :--- | :--- |
+| **UUIDs (IDs)** | Plaintext | PostgreSQL needs these to maintain relationships and link tables. Encrypting them breaks standard SQL functionality. |
+| **Timestamps** | Plaintext | Required for auditing, sorting, and database performance. |
+| **Numbers (Quota)** | Plaintext | Required for mathematical operations (SQL `SUM`, `COUNT`) within the database. |
+| **Vectors** | **Plaintext** | **CRITICAL**: Similarity search (semantic search) requires comparing raw numbers. If vectors are encrypted, your AI search will fail. |
+
+### 4. Impact on Reading/Writing
+*   **Performance**: AES-256-GCM is hardware-accelerated on most modern CPUs. The impact is negligible (a few milliseconds).
+*   **Searchability**: You **cannot** use SQL `WHERE name LIKE '%John%'` on encrypted columns. Searching must be done by fetching the data or using deterministic encryption (specialized setup).

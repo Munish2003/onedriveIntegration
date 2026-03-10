@@ -2,19 +2,29 @@
 Microsoft OAuth Backend — FastAPI
 Sign in with Microsoft using MSAL (Authorization Code Flow).
 Client logs in, picks a folder, and access is restricted to that folder using cross-drive paths.
+Includes document processing pipeline: download → extract → embed → encrypt → store.
 """
 
 import os
 import uuid
+import asyncio
+import logging
 import datetime
 import msal
+from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from dotenv import load_dotenv
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, BackgroundTasks
 from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from itsdangerous import URLSafeSerializer
 import aiohttp
+
+from database import db, encryptor
+import document_processor as doc_proc
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("SalezX")
 
 load_dotenv()
 
@@ -33,7 +43,14 @@ ONEDRIVE_SCOPES = ["Files.Read", "User.Read"]  # Read-only access to client file
 ONEDRIVE_REDIRECT_URI = os.getenv("ONEDRIVE_REDIRECT_URI", "http://localhost:8000/onedrive/callback")
 
 # ── App ─────────────────────────────────────────────────
-app = FastAPI(title="SalezX OneDrive Integration")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("🚀 SalezX starting...")
+    yield
+    await db.close()
+    logger.info("Shutdown complete.")
+
+app = FastAPI(title="SalezX OneDrive Integration", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
 sessions: dict[str, dict] = {}
@@ -301,7 +318,7 @@ class ConnectFolderRequest(BaseModel):
     name: str = "Connected Folder"
 
 @app.post("/api/onedrive/connect-folder")
-async def connect_folder(req: ConnectFolderRequest, request: Request):
+async def connect_folder(req: ConnectFolderRequest, request: Request, background_tasks: BackgroundTasks):
     user = _get_session_user(request)
     session_id = _get_session_id(request)
     if not user or not session_id:
@@ -317,8 +334,6 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
         return JSONResponse({"error": "No valid token"}, status_code=401)
 
     if req.folder_id and not drive_id:
-        # User selected from "My Folders" but we only got folder_id
-        # Let's get the drive details
         url = f"https://graph.microsoft.com/v1.0/me/drive/items/{req.folder_id}"
         headers = {"Authorization": f"Bearer {access_token}"}
         async with aiohttp.ClientSession() as session:
@@ -339,7 +354,6 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
     subscription_expiration_date = None
 
     if PUBLIC_URL:
-        # 1. Get initial delta token
         delta_url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/delta"
         headers = {"Authorization": f"Bearer {access_token}"}
         
@@ -349,7 +363,6 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
                     delta_data = await resp.json()
                     delta_link = delta_data.get("@odata.deltaLink")
                     
-        # 2. Clean up orphaned subscriptions and check for existing drive subscription
         sub_url = "https://graph.microsoft.com/v1.0/subscriptions"
         our_webhook_url = f"{PUBLIC_URL}/api/onedrive/webhook"
         
@@ -375,9 +388,8 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
             subscription_expiration_date = existing_sub["subscription_expiration"]
             print(f"🔄 Reusing existing webhook subscription: {subscription_id}")
         else:
-            # 3. Subscribe to changes (webhook fires for whole drive, but Delta API will filter to the folder)
             now = datetime.datetime.now(datetime.UTC)
-            expiration = now + datetime.timedelta(days=29)  # Max 29 days for DriveItem
+            expiration = now + datetime.timedelta(days=29)
             
             sub_payload = {
                "changeType": "updated",
@@ -397,10 +409,113 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
                     else:
                         print(f"⚠️ Failed to create webhook subscription: {await resp.text()}")
 
-    # Save to user session (append to list)
+    # ── Save to PostgreSQL ──────────────────────────────
+    # Step 1: Ensure company exists (upsert by tenant_id)
+    tenant_id = user.get("tenant_id", "")
+    enc_tenant = encryptor.encrypt(tenant_id) if encryptor else tenant_id
+    enc_client = encryptor.encrypt(CLIENT_ID) if encryptor else CLIENT_ID
+    enc_company_name = encryptor.encrypt(f"Company-{tenant_id[:8]}") if encryptor else f"Company-{tenant_id[:8]}"
+
+    company_row = await db.fetchrow(
+        "SELECT id FROM companies WHERE tenant_id = $1", enc_tenant
+    )
+    if company_row:
+        company_id = str(company_row["id"])
+    else:
+        company_id = str(uuid.uuid4())
+        await db.execute(
+            "INSERT INTO companies (id, name, tenant_id, client_id) VALUES ($1, $2, $3, $4)",
+            uuid.UUID(company_id), enc_company_name, enc_tenant, enc_client
+        )
+        logger.info(f"Created company: {company_id}")
+
+    # Step 2: Ensure employee exists (upsert by email)
+    enc_email = encryptor.encrypt(user["email"]) if encryptor else user["email"]
+    enc_name = encryptor.encrypt(user["name"]) if encryptor else user["name"]
+
+    employee_row = await db.fetchrow(
+        "SELECT id FROM employee WHERE email = $1", enc_email
+    )
+    if employee_row:
+        employee_id = str(employee_row["id"])
+    else:
+        employee_id = str(uuid.uuid4())
+        await db.execute(
+            "INSERT INTO employee (id, company_id, email, name, role) VALUES ($1, $2, $3, $4, $5)",
+            uuid.UUID(employee_id), uuid.UUID(company_id), enc_email, enc_name, "admin"
+        )
+        logger.info(f"Created employee: {employee_id}")
+
+    # Step 3: Ensure OneDrive connection exists
+    enc_drive = encryptor.encrypt(drive_id) if encryptor else drive_id
+    enc_access_token = encryptor.encrypt(access_token) if encryptor else access_token
+    enc_refresh = encryptor.encrypt(user.get("onedrive_refresh_token", "")) if encryptor else user.get("onedrive_refresh_token", "")
+    enc_access_type = encryptor.encrypt("specific_folders") if encryptor else "specific_folders"
+
+    conn_row = await db.fetchrow(
+        "SELECT id FROM onedrive_connections WHERE company_id = $1 AND drive_id = $2",
+        uuid.UUID(company_id), enc_drive
+    )
+    if conn_row:
+        connection_id = str(conn_row["id"])
+        # Update tokens
+        await db.execute(
+            "UPDATE onedrive_connections SET access_token = $1, refresh_token = $2, updated_at = NOW() WHERE id = $3",
+            enc_access_token, enc_refresh, uuid.UUID(connection_id)
+        )
+    else:
+        connection_id = str(uuid.uuid4())
+        await db.execute(
+            """INSERT INTO onedrive_connections 
+               (id, company_id, employee_id, drive_id, access_type, access_token, refresh_token)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            uuid.UUID(connection_id), uuid.UUID(company_id), uuid.UUID(employee_id),
+            enc_drive, enc_access_type, enc_access_token, enc_refresh
+        )
+        logger.info(f"Created OneDrive connection: {connection_id}")
+
+    # Step 4: Save tracked folder
+    enc_folder_id = encryptor.encrypt(item_id) if encryptor else item_id
+    enc_folder_name = encryptor.encrypt(req.name) if encryptor else req.name
+    enc_delta = encryptor.encrypt(delta_link) if encryptor and delta_link else (delta_link or "")
+    enc_sub_id = encryptor.encrypt(subscription_id) if encryptor and subscription_id else (subscription_id or "")
+
+    folder_row = await db.fetchrow(
+        "SELECT id FROM tracked_folders WHERE onedrive_connection_id = $1 AND folder_id = $2",
+        uuid.UUID(connection_id), enc_folder_id
+    )
+    if folder_row:
+        tracked_folder_id = str(folder_row["id"])
+        await db.execute(
+            "UPDATE tracked_folders SET delta_link = $1, subscription_id = $2, updated_at = NOW() WHERE id = $3",
+            enc_delta, enc_sub_id, uuid.UUID(tracked_folder_id)
+        )
+    else:
+        tracked_folder_id = str(uuid.uuid4())
+        await db.execute(
+            """INSERT INTO tracked_folders 
+               (id, company_id, onedrive_connection_id, folder_id, folder_name, delta_link, subscription_id)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+            uuid.UUID(tracked_folder_id), uuid.UUID(company_id), uuid.UUID(connection_id),
+            enc_folder_id, enc_folder_name, enc_delta, enc_sub_id
+        )
+        logger.info(f"Created tracked folder: {tracked_folder_id}")
+
+    # Step 5: Trigger batch document processing as a background task
+    background_tasks.add_task(
+        doc_proc.process_folder_batch,
+        access_token=access_token,
+        drive_id=drive_id,
+        company_id=company_id,
+        onedrive_connection_id=connection_id,
+        tracked_folder_id=tracked_folder_id,
+        folder_item_id=item_id,
+    )
+    logger.info(f"📦 Background processing triggered for folder: {req.name}")
+
+    # ── Save to session (existing logic) ────────────────
     connected_folders = user.get("onedrive_connected_folders", [])
     
-    # Check if this exact folder is already connected to avoid duplicates
     existing = next((f for f in connected_folders if f["item_id"] == item_id), None)
     if not existing:
         connected_folders.append({
@@ -409,7 +524,10 @@ async def connect_folder(req: ConnectFolderRequest, request: Request):
             "folder_name": req.name,
             "delta_link": delta_link,
             "subscription_id": subscription_id,
-            "subscription_expiration": subscription_expiration_date
+            "subscription_expiration": subscription_expiration_date,
+            "tracked_folder_id": tracked_folder_id,
+            "company_id": company_id,
+            "connection_id": connection_id,
         })
         user["onedrive_connected_folders"] = connected_folders
         print(f"➕ [ADD FOLDER] Added '{req.name}' to tracking under subscription: {subscription_id}")
@@ -443,7 +561,6 @@ async def disconnect_folder(req: DisconnectFolderRequest, request: Request):
         other_users = [f for f in connected_folders if f.get("subscription_id") == subscription_id and f.get("item_id") != req.folder_id]
         
         if subscription_id and len(other_users) == 0:
-            # No other folder needs this subscription, safe to delete from Graph
             access_token = await _get_valid_access_token(user, session_id)
             if access_token:
                 sub_url = f"https://graph.microsoft.com/v1.0/subscriptions/{subscription_id}"
@@ -459,6 +576,15 @@ async def disconnect_folder(req: DisconnectFolderRequest, request: Request):
         
         folder_name = target_folder.get("folder_name", "Unknown")
         print(f"➖ [REMOVE FOLDER] Removed '{folder_name}' from tracking under subscription: {subscription_id}")
+
+        # ── DELETE from PostgreSQL (CASCADE deletes documents + embeddings) ──
+        pg_folder_id = target_folder.get("tracked_folder_id")
+        if pg_folder_id:
+            try:
+                await doc_proc.delete_folder_data(pg_folder_id)
+                logger.info(f"🗑️  PG cascade delete complete for folder: {folder_name}")
+            except Exception as e:
+                logger.error(f"PG delete failed for folder {pg_folder_id}: {e}")
         
         # Remove folder from session list
         connected_folders = [f for f in connected_folders if f["item_id"] != req.folder_id]
@@ -635,17 +761,44 @@ async def handle_webhook(request: Request):
                         
                         # Process exactly what changed
                         changes = delta_data.get("value", [])
+                        pg_folder_id = target_folder.get("tracked_folder_id")
+                        pg_company_id = target_folder.get("company_id")
+                        pg_conn_id = target_folder.get("connection_id")
+                        
                         for item in changes:
-                            item_id = item.get("id", "unknown")
+                            item_id_val = item.get("id", "unknown")
                             item_name = item.get("name")
-                            display = f"[{target_folder.get('folder_name')}] {item_name} (ID: {item_id})" if item_name else f"[{target_folder.get('folder_name')}] ID: {item_id}"
+                            display = f"[{target_folder.get('folder_name')}] {item_name} (ID: {item_id_val})" if item_name else f"[{target_folder.get('folder_name')}] ID: {item_id_val}"
                             
                             if item.get("deleted") or "@removed" in item:
                                 print(f"🗑️  [DELETED]: {display}")
+                                # DELETE from PostgreSQL
+                                if pg_folder_id:
+                                    try:
+                                        await doc_proc.delete_file_by_onedrive_id(
+                                            pg_folder_id, item_id_val
+                                        )
+                                    except Exception as e:
+                                        print(f"⚠️  PG delete failed for {item_id_val}: {e}")
+
                             elif "file" in item:
                                 size = item.get("size", 0)
                                 last_modified = item.get("lastModifiedDateTime", "")
                                 print(f"📝  [FILE ADDED/MODIFIED]: {display} | Size: {size} bytes | Modified: {last_modified}")
+                                # PROCESS the file (download → extract → embed → encrypt → store)
+                                if pg_folder_id and pg_company_id and pg_conn_id:
+                                    try:
+                                        await doc_proc.process_single_file(
+                                            access_token=access_token,
+                                            drive_id=target_folder["drive_id"],
+                                            company_id=pg_company_id,
+                                            onedrive_connection_id=pg_conn_id,
+                                            tracked_folder_id=pg_folder_id,
+                                            file_item=item,
+                                        )
+                                    except Exception as e:
+                                        print(f"⚠️  Processing failed for {item_name}: {e}")
+
                             elif "folder" in item:
                                 print(f"📁  [FOLDER CHANGED]: {display}")
                             else:
