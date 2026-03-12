@@ -543,32 +543,17 @@
                 const user = await res.json();
                 currentUser = user;
 
+                // Log user info to console instead of showing on screen
+                console.log("Logged in user details:", {
+                    name: user.name,
+                    email: user.email,
+                    ms_id: user.ms_id,
+                    tenant_id: user.tenant_id
+                });
+
                 document.getElementById("main-content").innerHTML = `
                     <h1 class="greeting">Welcome back, <span>${user.name || "User"}</span> 👋</h1>
                     <p class="greeting-sub">You're signed in securely with Microsoft Identity.</p>
-
-                    <div class="cards">
-                        <div class="info-card">
-                            <div class="icon icon-name">👤</div>
-                            <div class="label">Full Name</div>
-                            <div class="value">${user.name || "—"}</div>
-                        </div>
-                        <div class="info-card">
-                            <div class="icon icon-email">✉️</div>
-                            <div class="label">Email Address</div>
-                            <div class="value">${user.email || "—"}</div>
-                        </div>
-                        <div class="info-card">
-                            <div class="icon icon-id">🆔</div>
-                            <div class="label">User ID</div>
-                            <div class="value" style="font-size: 0.85rem;">${user.ms_id || "—"}</div>
-                        </div>
-                        <div class="info-card">
-                            <div class="icon icon-tenant">🏢</div>
-                            <div class="label">Tenant ID</div>
-                            <div class="value" style="font-size: 0.85rem;">${user.tenant_id || "—"}</div>
-                        </div>
-                    </div>
 
                     <div class="status-bar">
                         <div class="status-dot"></div>
@@ -588,22 +573,8 @@
 
                 if (user.connected_folders && user.connected_folders.length > 0) {
                     showConnectedUI();
-                } else if (user.onedrive_connected) {
-                    showFolderPicker();
                 } else {
-                    document.getElementById("onedrive-content").innerHTML = `
-                        <div class="folder-setup-card" style="text-align: center;">
-                            <div style="font-size: 3rem; margin-bottom: 20px;">🔗</div>
-                            <h3 class="folder-setup-title">Connect your OneDrive Account</h3>
-                            <p class="folder-setup-desc">
-                                We need access to your OneDrive to securely sync documents. <br>
-                                You will be able to choose specific folders for us to access.
-                            </p>
-                            <a href="/onedrive/connect" class="connect-btn">
-                                Proceed to Microsoft Login
-                            </a>
-                        </div>
-                    `;
+                    showFolderPicker();
                 }
 
             } catch (err) {
@@ -612,129 +583,374 @@
             }
         }
 
+        let allFoldersList = [];
+        let folderPickerMode = 'specific'; // 'full' or 'specific'
+
         async function showFolderPicker() {
             const container = document.getElementById("onedrive-content");
             container.innerHTML = `
-                <div class="folder-setup-card">
-                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 24px;">
-                        <div>
-                            <h3 class="folder-setup-title">Select a folder to connect</h3>
-                            <p class="folder-setup-desc" style="margin-bottom: 0;">
-                                Choose a specific folder you want SalezX to access.
-                            </p>
+                <style>
+                    .sync-modal {
+                        background: #252526;
+                        border-radius: 12px;
+                        padding: 32px;
+                        max-width: 600px;
+                        margin: 0 auto;
+                        position: relative;
+                        color: #fff;
+                        font-family: 'Segoe UI', 'Inter', sans-serif;
+                        border: 1px solid rgba(255,255,255,0.1);
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+                    }
+                    .modal-close {
+                        position: absolute;
+                        top: 24px;
+                        right: 24px;
+                        background: none;
+                        border: none;
+                        color: #a0a0a0;
+                        font-size: 20px;
+                        cursor: pointer;
+                    }
+                    .sync-modal h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
+                    .sync-modal p { font-size: 0.95rem; color: #b0b0b0; margin-bottom: 24px; }
+                    
+                    .option-card {
+                        border: 1px solid rgba(255,255,255,0.1);
+                        border-radius: 8px;
+                        padding: 16px;
+                        margin-bottom: 16px;
+                        cursor: pointer;
+                        transition: all 0.2s;
+                        background: #2d2d30;
+                        position: relative;
+                    }
+                    .option-card.selected {
+                        border-color: #5c5cff;
+                        background: rgba(92, 92, 255, 0.05);
+                    }
+                    .option-header {
+                        display: flex;
+                        align-items: center;
+                        gap: 12px;
+                        margin-bottom: 6px;
+                    }
+                    /* Custom Radio */
+                    .radio-outer {
+                        width: 20px; height: 20px; border-radius: 50%; border: 2px solid #888;
+                        display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+                    }
+                    .option-card.selected .radio-outer { border-color: #5c5cff; }
+                    .radio-inner {
+                        width: 10px; height: 10px; border-radius: 50%; background: transparent; transition: 0.2s;
+                    }
+                    .option-card.selected .radio-inner { background: #5c5cff; }
+                    
+                    .option-title { font-weight: 600; font-size: 1rem; color: #fff; }
+                    .option-desc { font-size: 0.85rem; color: #a0a0a0; margin-left: 32px; }
+                    
+                    .folder-select-area {
+                        margin-left: 32px;
+                        margin-top: 16px;
+                        display: none;
+                    }
+                    .option-card.selected .folder-select-area {
+                        display: block;
+                    }
+                    
+                    .search-input {
+                        width: 100%;
+                        background: #1e1e1e;
+                        border: 1px solid rgba(255,255,255,0.1);
+                        color: #fff;
+                        padding: 10px 16px 10px 36px;
+                        border-radius: 6px;
+                        font-size: 0.9rem;
+                        margin-bottom: 12px;
+                        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>');
+                        background-repeat: no-repeat;
+                        background-position: 12px center;
+                    }
+                    
+                    .folder-list {
+                        max-height: 200px;
+                        overflow-y: auto;
+                        border-radius: 6px;
+                    }
+                    .folder-list::-webkit-scrollbar { width: 6px; }
+                    .folder-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+                    
+                    .folder-row {
+                        display: flex;
+                        align-items: center;
+                        padding: 8px 0;
+                        gap: 12px;
+                        cursor: pointer;
+                    }
+                    .folder-row:hover { background: rgba(255,255,255,0.02); }
+                    .folder-checkbox {
+                        width: 18px; height: 18px;
+                        border: 1px solid #888;
+                        border-radius: 4px;
+                        display: flex; align-items: center; justify-content: center;
+                        background: transparent;
+                        flex-shrink: 0;
+                    }
+                    .folder-checkbox.checked {
+                        background: #5c5cff;
+                        border-color: #5c5cff;
+                    }
+                    .folder-checkbox.checked::after {
+                        content: '';
+                        width: 4px; height: 8px;
+                        border: solid white;
+                        border-width: 0 2px 2px 0;
+                        transform: rotate(45deg);
+                        margin-top: -2px;
+                    }
+                    
+                    .info-box {
+                        background: rgba(92, 92, 255, 0.1);
+                        border-radius: 8px;
+                        padding: 12px 16px;
+                        display: flex;
+                        gap: 12px;
+                        align-items: flex-start;
+                        margin-top: 16px;
+                        color: #b0b0b0;
+                        font-size: 0.9rem;
+                    }
+                    
+                    .modal-footer {
+                        display: flex;
+                        justify-content: flex-end;
+                        gap: 12px;
+                        margin-top: 32px;
+                    }
+                    .btn-cancel {
+                        background: transparent;
+                        color: #5c5cff;
+                        border: 1px solid transparent;
+                        padding: 10px 20px;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        cursor: pointer;
+                    }
+                    .btn-cancel:hover { background: rgba(92, 92, 255, 0.1); }
+                    .btn-continue {
+                        background: #5c5cff;
+                        color: #fff;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 6px;
+                        font-weight: 600;
+                        cursor: pointer;
+                    }
+                    .btn-continue:hover { background: #4a4ae6; }
+                    .btn-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+                </style>
+                
+                <div class="sync-modal">
+                    <button class="modal-close" onclick="window.location.reload()">✕</button>
+                    <h2>Choose How to Sync Your OneDrive Files</h2>
+                    <p>Connect OneDrive with the level of access you prefer:</p>
+                    
+                    <!-- Option 1: Full Access -->
+                    <div class="option-card" id="opt-full" onclick="setSyncMode('full')">
+                        <div class="option-header">
+                            <div class="radio-outer"><div class="radio-inner"></div></div>
+                            <div class="option-title" style="display:flex;align-items:center;gap:8px;">
+                                Full access <span style="font-size:0.75rem;background:rgba(255,255,255,0.1);padding:3px 8px;border-radius:12px;color:#ccc;">Recommended</span>
+                            </div>
                         </div>
-                        <div style="padding: 8px 16px; background: rgba(0, 200, 83, 0.1); border-radius: 8px; color: #69f0ae; font-size: 0.9rem; font-weight: 600;">
-                            ✓ Account Authorized
+                        <div class="option-desc">
+                            Sync your entire OneDrive so SalezX can include all your files.
                         </div>
-                    </div>
-
-                    <div id="folder-loading" style="text-align: center; padding: 40px 0; color: rgba(255,255,255,0.5);">
-                        <div class="spinner" style="width: 24px; height: 24px; border-width: 2px;"></div>
-                        Loading your folders...
+                        <div class="folder-select-area" id="area-full">
+                            <div class="folder-list" id="list-full-folders" style="margin-top: 12px;">
+                                <div style="padding:10px;text-align:center;font-size:0.85rem;">Loading folders...</div>
+                            </div>
+                        </div>
                     </div>
                     
-                    <div id="folder-grid" class="folder-grid" style="display: none;"></div>
-
-                    <div class="action-row" style="display: flex; justify-content: space-between;">
-                        <button class="btn-submit" style="background: rgba(255,255,255,0.1); color: #fff; opacity: 1; pointer-events: auto;" onclick="showConnectedUI()">Cancel</button>
-                        <button id="btn-submit" class="btn-submit" onclick="submitFolder()">Connect Selected Folder</button>
+                    <!-- Option 2: Select folders only -->
+                    <div class="option-card selected" id="opt-specific" onclick="setSyncMode('specific')">
+                        <div class="option-header">
+                            <div class="radio-outer"><div class="radio-inner"></div></div>
+                            <div class="option-title">Select folders only</div>
+                        </div>
+                        <div class="option-desc">
+                            Choose specific folders to sync — SalezX will only access what you select.
+                        </div>
+                        <div class="folder-select-area" id="area-specific">
+                            <div style="margin-bottom: 8px; font-size: 0.9rem; font-weight: 600;">Select folders to sync</div>
+                            <input type="text" class="search-input" id="folder-search" placeholder="Search folders" oninput="filterFolders()">
+                            <div class="folder-list" id="list-folders">
+                                <div style="padding:10px;text-align:center;font-size:0.85rem;">Loading folders...</div>
+                            </div>
+                            <div class="info-box" style="margin-top:8px;">
+                                <div style="color:#5c5cff;font-weight:bold;font-size:1.1rem;margin-top:-2px;">ⓘ</div>
+                                <div>Only selected folders will be synced.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-box" id="general-info-box" style="display:none;">
+                        <div style="color:#5c5cff;font-weight:bold;font-size:1.1rem;margin-top:-2px;">ⓘ</div>
+                        <div>You can update your preferences anytime from your integration settings.</div>
+                    </div>
+                    
+                    <div class="modal-footer">
+                        <button class="btn-cancel" onclick="window.location.reload()">Cancel</button>
+                        <button class="btn-continue" id="btn-submit-folders" onclick="submitFolderTarget()">Continue</button>
                     </div>
                 </div>
             `;
+
+            // Default to specific mode
+            setSyncMode('specific');
 
             try {
                 const res = await fetch("/api/onedrive/folders");
                 const data = await res.json();
 
-                document.getElementById('folder-loading').style.display = 'none';
-                const grid = document.getElementById('folder-grid');
-                grid.style.display = 'grid';
-
-                if (!data.folders || data.folders.length === 0) {
-                    grid.innerHTML = '<div style="grid-column: 1/-1; text-align: center; padding: 30px; color: rgba(255,255,255,0.5);">No folders found in your OneDrive root.</div>';
-                    return;
+                if (data.folders) {
+                    allFoldersList = data.folders.map(f => ({ ...f, checked: false }));
+                    renderFolders();
+                } else {
+                    document.getElementById('list-folders').innerHTML = '<div style="padding:10px;color:red;">Error loading folders.</div>';
+                    document.getElementById('list-full-folders').innerHTML = '<div style="padding:10px;color:red;">Error loading folders.</div>';
                 }
-
-                let html = '';
-                data.folders.forEach(f => {
-                    const fStr = encodeURIComponent(JSON.stringify(f));
-                    html += `
-                        <div class="folder-item" id="folder-${f.id}" onclick="selectFolder('${fStr}', '${f.id}')">
-                            <div class="folder-icon">📁</div>
-                            <div class="folder-name">${f.name}</div>
-                            <div class="folder-meta">${f.child_count} items</div>
-                        </div>
-                    `;
-                });
-                grid.innerHTML = html;
-
             } catch (err) {
-                document.getElementById('folder-loading').innerHTML = '<div style="color: #ff5252;">Error loading folders.</div>';
+                console.error(err);
+                document.getElementById('list-folders').innerHTML = '<div style="padding:10px;color:red;">Error loading folders.</div>';
             }
         }
 
-        let selectedFolderInfos = [];
+        function setSyncMode(mode) {
+            folderPickerMode = mode;
+            if (mode === 'full') {
+                document.getElementById('opt-full').classList.add('selected');
+                document.getElementById('opt-specific').classList.remove('selected');
 
-        function selectFolder(folderStr, domId) {
-            const folderInfo = JSON.parse(decodeURIComponent(folderStr));
-            const el = document.getElementById('folder-' + domId);
-
-            const index = selectedFolderInfos.findIndex(f => f.id === folderInfo.id);
-            if (index > -1) {
-                selectedFolderInfos.splice(index, 1);
-                el.classList.remove('selected');
+                if (allFoldersList.length > 0) {
+                    allFoldersList.forEach(f => f.checked = true);
+                    renderFolders();
+                }
             } else {
-                selectedFolderInfos.push(folderInfo);
-                el.classList.add('selected');
+                document.getElementById('opt-specific').classList.add('selected');
+                document.getElementById('opt-full').classList.remove('selected');
+
+                if (allFoldersList.length > 0) {
+                    allFoldersList.forEach(f => f.checked = false);
+                    renderFolders();
+                }
             }
+            updateSubmitButton();
+        }
 
-            const btn = document.getElementById('btn-submit');
-            if (selectedFolderInfos.length > 0) {
-                btn.classList.add('active');
-                btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
-            } else {
-                btn.classList.remove('active');
-                btn.innerText = 'Connect Selected Folders';
+        function toggleFolder(id) {
+            const folder = allFoldersList.find(f => f.id === id);
+            if (folder) {
+                folder.checked = !folder.checked;
+                renderFolders();
+                updateSubmitButton();
             }
         }
 
-        async function submitFolder() {
-            if (selectedFolderInfos.length === 0) return;
-            const btn = document.getElementById('btn-submit');
-            btn.classList.remove('active');
+        function filterFolders() {
+            renderFolders();
+        }
+
+        function renderFolders() {
+            const query = (document.getElementById('folder-search')?.value || '').toLowerCase();
+
+            let html = '';
+            let fullHtml = '';
+
+            allFoldersList.forEach(f => {
+                const isVisible = f.name.toLowerCase().includes(query);
+                const checkedClass = f.checked ? 'checked' : '';
+
+                const rowHtml = `
+                    <div class="folder-row" onclick="event.stopPropagation(); toggleFolder('${f.id}')">
+                        <div class="folder-checkbox ${checkedClass}"></div>
+                        <div style="font-size:1.2rem;">📁</div>
+                        <div style="font-size:0.95rem;color:#fff;">${f.name}</div>
+                    </div>
+                `;
+
+                fullHtml += rowHtml;
+                if (isVisible) html += rowHtml;
+            });
+
+            if (allFoldersList.length === 0) {
+                html = '<div style="padding:10px;text-align:center;">No folders found.</div>';
+                fullHtml = html;
+            }
+
+            const listEl = document.getElementById('list-folders');
+            if (listEl) listEl.innerHTML = html;
+
+            const listFullEl = document.getElementById('list-full-folders');
+            if (listFullEl) listFullEl.innerHTML = fullHtml;
+        }
+
+        function updateSubmitButton() {
+            const btn = document.getElementById('btn-submit-folders');
+            const hasSelection = allFoldersList.some(f => f.checked);
+
+            if (folderPickerMode === 'full' || hasSelection) {
+                btn.disabled = false;
+            } else {
+                btn.disabled = true;
+            }
+        }
+
+        async function submitFolderTarget() {
+            const selectedFolders = allFoldersList.filter(f => f.checked);
+            if (selectedFolders.length === 0 && folderPickerMode !== 'full') return;
+
+            const btn = document.getElementById('btn-submit-folders');
+            btn.disabled = true;
             btn.innerText = 'Connecting...';
 
+            const accessType = folderPickerMode === 'full' ? 'full_access' : 'specific_folders';
+
             try {
-                let allOk = true;
-                for (const info of selectedFolderInfos) {
-                    const res = await fetch("/api/onedrive/connect-folder", {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            folder_id: info.id,
-                            name: info.name,
-                            drive_id: info.drive_id,
-                            item_id: info.item_id
-                        })
-                    });
-                    if (!res.ok) {
-                        allOk = false;
-                        break;
-                    }
+                // Send a unified payload to the backend
+                const res = await fetch("/api/onedrive/connect-folders-batch", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        access_type: accessType,
+                        folders: selectedFolders.map(f => ({
+                            folder_id: f.id,
+                            name: f.name,
+                            drive_id: f.drive_id,
+                            item_id: f.item_id
+                        }))
+                    })
+                });
+
+                const contentType = res.headers.get("content-type");
+                let data = null;
+                if (contentType && contentType.indexOf("application/json") !== -1) {
+                    data = await res.json();
                 }
 
-                if (allOk) {
-                    selectedFolderInfos = []; // reset state
+                if (res.ok) {
                     loadUser(); // Refresh UI
                 } else {
-                    alert("Failed to connect one or more folders");
-                    btn.classList.add('active');
-                    btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
+                    alert("Failed to connect folders: " + (data ? JSON.stringify(data) : res.statusText));
+                    btn.disabled = false;
+                    btn.innerText = 'Continue';
                 }
             } catch (err) {
+                console.error(err);
                 alert("Error connecting folders");
-                btn.classList.add('active');
-                btn.innerText = `Connect ${selectedFolderInfos.length} Folder${selectedFolderInfos.length > 1 ? 's' : ''}`;
+                btn.disabled = false;
+                btn.innerText = 'Continue';
             }
         }
 

@@ -113,7 +113,7 @@ async def index(request: Request):
 async def auth_login():
     client = _build_msal_app()
     flow = client.initiate_auth_code_flow(
-        scopes=SCOPES,
+        scopes=ONEDRIVE_SCOPES, # Force OneDrive permissions explicitly on login
         redirect_uri=REDIRECT_URI,
     )
     state = flow["state"]
@@ -142,7 +142,9 @@ async def auth_callback(request: Request):
         "name": id_token_claims.get("name", ""),
         "tenant_id": id_token_claims.get("tid", ""),
         "access_token": result.get("access_token", ""),
-        "onedrive_connected": False,
+        "onedrive_connected": True, # Automatically connected during auth
+        "onedrive_access_token": result.get("access_token"),
+        "onedrive_refresh_token": result.get("refresh_token"),
     }
 
     session_id = str(uuid.uuid4())
@@ -211,11 +213,6 @@ async def onedrive_connect(request: Request):
 
 @app.get("/onedrive/callback")
 async def onedrive_callback(request: Request):
-    user = _get_session_user(request)
-    session_id = _get_session_id(request)
-    if not user or not session_id:
-        return HTMLResponse("<h2>Unauthorized. Please log in first.</h2>", status_code=401)
-
     params = dict(request.query_params)
     state = params.get("state", "")
     flow = auth_flows.pop(state, None)
@@ -228,12 +225,32 @@ async def onedrive_callback(request: Request):
     if "error" in result:
         return HTMLResponse(f"<h2>OneDrive Connect Failed: {result.get('error_description')}</h2>", status_code=400)
 
+    # We hit this route either as an initial login OR as a re-auth.
+    user = _get_session_user(request)
+    session_id = _get_session_id(request)
+    
+    # If there's no session, construct the user from id_token_claims
+    if not user or not session_id:
+        id_token_claims = result.get("id_token_claims", {})
+        user = {
+            "ms_id": id_token_claims.get("oid", id_token_claims.get("sub", "")),
+            "email": id_token_claims.get("preferred_username", ""),
+            "name": id_token_claims.get("name", ""),
+            "tenant_id": id_token_claims.get("tid", ""),
+            "onedrive_connected_folders": []
+        }
+        session_id = str(uuid.uuid4())
+
     user["onedrive_connected"] = True
+    user["access_token"] = result.get("access_token")  # Store as main token
     user["onedrive_access_token"] = result.get("access_token")
     user["onedrive_refresh_token"] = result.get("refresh_token")
     sessions[session_id] = user
 
-    return RedirectResponse(url="/dashboard", status_code=302)
+    signed_token = serializer.dumps(session_id)
+    response = RedirectResponse(url="/dashboard", status_code=302)
+    response.set_cookie(key="session", value=signed_token, httponly=True, max_age=86400 * 7, samesite="lax")
+    return response
 
 @app.get("/api/onedrive/shared-folders")
 async def shared_folders(request: Request):
@@ -310,6 +327,212 @@ async def onedrive_folders(request: Request, parent_id: str = None):
                 })
             
             return {"folders": res_folders}
+
+class FolderTarget(BaseModel):
+    folder_id: str = None
+    drive_id: str = None
+    item_id: str = None
+    name: str = "Connected Folder"
+
+class ConnectFoldersBatchRequest(BaseModel):
+    access_type: str = "specific_folders"  # "full_access" or "specific_folders"
+    folders: list[FolderTarget]
+
+@app.post("/api/onedrive/connect-folders-batch")
+async def connect_folders_batch(req: ConnectFoldersBatchRequest, request: Request, background_tasks: BackgroundTasks):
+    user = _get_session_user(request)
+    session_id = _get_session_id(request)
+    if not user or not session_id:
+        return JSONResponse({"error": "Unauthorized"}, status_code=401)
+    
+    access_token = await _get_valid_access_token(user, session_id)
+    if not access_token:
+        return JSONResponse({"error": "No valid token"}, status_code=401)
+        
+    # Ensure company exists
+    tenant_id = user.get("tenant_id", "")
+    enc_company_name = encryptor.encrypt(f"Company-{tenant_id[:8]}") if encryptor else f"Company-{tenant_id[:8]}"
+
+    company_row = await db.fetchrow("SELECT id FROM companies WHERE tenant_id = $1", tenant_id)
+    if company_row:
+        company_id = str(company_row["id"])
+    else:
+        company_id = str(uuid.uuid4())
+        await db.execute(
+            "INSERT INTO companies (id, name, tenant_id, client_id) VALUES ($1, $2, $3, $4)",
+            uuid.UUID(company_id), enc_company_name, tenant_id, CLIENT_ID
+        )
+
+    # Ensure employee exists
+    ms_id = user.get("ms_id", str(uuid.uuid4()))
+    enc_email = encryptor.encrypt(user["email"]) if encryptor else user["email"]
+    enc_name = encryptor.encrypt(user["name"]) if encryptor else user["name"]
+
+    employee_row = await db.fetchrow("SELECT id FROM employee WHERE ms_id = $1", ms_id)
+    if employee_row:
+        employee_id = str(employee_row["id"])
+    else:
+        employee_id = str(uuid.uuid4())
+        await db.execute(
+            "INSERT INTO employee (id, company_id, ms_id, email, name, role) VALUES ($1, $2, $3, $4, $5, $6)",
+            uuid.UUID(employee_id), uuid.UUID(company_id), ms_id, enc_email, enc_name, "admin"
+        )
+        
+    connected_folders = user.get("onedrive_connected_folders", [])
+    
+    # Process each requested folder
+    for folder_req in req.folders:
+        drive_id = folder_req.drive_id
+        item_id = folder_req.item_id
+        
+        if folder_req.folder_id and not drive_id:
+            url = f"https://graph.microsoft.com/v1.0/me/drive/items/{folder_req.folder_id}"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        drive_id = data.get("parentReference", {}).get("driveId")
+                        item_id = folder_req.folder_id
+                        
+        if not drive_id or not item_id:
+            logger.error(f"Missing drive_id or item_id for folder: {folder_req.name}")
+            continue
+
+        # Setup Webhook
+        delta_link = None
+        subscription_id = None
+        subscription_expiration_date = None
+
+        if PUBLIC_URL:
+            delta_url = f"https://graph.microsoft.com/v1.0/drives/{drive_id}/items/{item_id}/delta"
+            headers = {"Authorization": f"Bearer {access_token}"}
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(delta_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        delta_data = await resp.json()
+                        delta_link = delta_data.get("@odata.deltaLink")
+                        
+            sub_url = "https://graph.microsoft.com/v1.0/subscriptions"
+            our_webhook_url = f"{PUBLIC_URL}/api/onedrive/webhook"
+            
+            valid_sub_ids = [f.get("subscription_id") for f in connected_folders if f.get("subscription_id")]
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.get(sub_url, headers=headers) as resp:
+                    if resp.status == 200:
+                        subs_data = await resp.json()
+                        for sub in subs_data.get("value", []):
+                            if sub.get("notificationUrl") == our_webhook_url:
+                                if sub["id"] not in valid_sub_ids:
+                                    del_url = f"{sub_url}/{sub['id']}"
+                                    async with session.delete(del_url, headers=headers) as del_resp:
+                                        pass
+                                            
+            existing_sub = next((f for f in connected_folders if f.get("drive_id") == drive_id and f.get("subscription_id")), None)
+            
+            if existing_sub:
+                subscription_id = existing_sub["subscription_id"]
+                subscription_expiration_date = existing_sub["subscription_expiration"]
+            else:
+                now = datetime.datetime.now(datetime.UTC)
+                expiration = now + datetime.timedelta(days=29)
+                sub_payload = {
+                   "changeType": "updated",
+                   "notificationUrl": our_webhook_url,
+                   "resource": f"/drives/{drive_id}/root",
+                   "expirationDateTime": expiration.isoformat().replace("+00:00", "Z"),
+                   "clientState": session_id,
+                }
+                async with aiohttp.ClientSession() as session:
+                    async with session.post(sub_url, headers=headers, json=sub_payload) as resp:
+                        if resp.status == 201:
+                            sub_data = await resp.json()
+                            subscription_id = sub_data.get("id")
+                            subscription_expiration_date = sub_data.get("expirationDateTime")
+
+        # OneDrive Connection record (upsert)
+        enc_access_token = encryptor.encrypt(access_token) if encryptor else access_token
+        enc_refresh = encryptor.encrypt(user.get("onedrive_refresh_token", "")) if encryptor else user.get("onedrive_refresh_token", "")
+
+        conn_row = await db.fetchrow(
+            "SELECT id FROM onedrive_connections WHERE company_id = $1 AND drive_id = $2",
+            uuid.UUID(company_id), drive_id
+        )
+        if conn_row:
+            connection_id = str(conn_row["id"])
+            await db.execute(
+                "UPDATE onedrive_connections SET access_type = $1, access_token = $2, refresh_token = $3, updated_at = NOW() WHERE id = $4",
+                req.access_type, enc_access_token, enc_refresh, uuid.UUID(connection_id)
+            )
+        else:
+            connection_id = str(uuid.uuid4())
+            await db.execute(
+                """INSERT INTO onedrive_connections 
+                   (id, company_id, employee_id, drive_id, access_type, access_token, refresh_token)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+                uuid.UUID(connection_id), uuid.UUID(company_id), uuid.UUID(employee_id),
+                drive_id, req.access_type, enc_access_token, enc_refresh
+            )
+
+        # Tracked folder record (upsert)
+        enc_folder_name = encryptor.encrypt(folder_req.name) if encryptor else folder_req.name
+        enc_delta = encryptor.encrypt(delta_link) if encryptor and delta_link else (delta_link or "")
+        enc_sub_id = encryptor.encrypt(subscription_id) if encryptor and subscription_id else (subscription_id or "")
+
+        folder_row = await db.fetchrow(
+            "SELECT id FROM tracked_folders WHERE onedrive_connection_id = $1 AND folder_id = $2",
+            uuid.UUID(connection_id), item_id
+        )
+        if folder_row:
+            tracked_folder_id = str(folder_row["id"])
+            await db.execute(
+                "UPDATE tracked_folders SET delta_link = $1, subscription_id = $2, updated_at = NOW() WHERE id = $3",
+                enc_delta, enc_sub_id, uuid.UUID(tracked_folder_id)
+            )
+        else:
+            tracked_folder_id = str(uuid.uuid4())
+            await db.execute(
+                """INSERT INTO tracked_folders 
+                   (id, company_id, onedrive_connection_id, folder_id, folder_name, delta_link, subscription_id)
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)""",
+                uuid.UUID(tracked_folder_id), uuid.UUID(company_id), uuid.UUID(connection_id),
+                item_id, enc_folder_name, enc_delta, enc_sub_id
+            )
+
+        # Spawan background processing
+        background_tasks.add_task(
+            doc_proc.process_folder_batch,
+            access_token=access_token,
+            drive_id=drive_id,
+            company_id=company_id,
+            onedrive_connection_id=connection_id,
+            tracked_folder_id=tracked_folder_id,
+            folder_item_id=item_id,
+        )
+        
+        # Session state
+        existing = next((f for f in connected_folders if f["item_id"] == item_id), None)
+        if not existing:
+            connected_folders.append({
+                "drive_id": drive_id,
+                "item_id": item_id,
+                "folder_name": folder_req.name,
+                "delta_link": delta_link,
+                "subscription_id": subscription_id,
+                "subscription_expiration": subscription_expiration_date,
+                "tracked_folder_id": tracked_folder_id,
+                "company_id": company_id,
+                "connection_id": connection_id,
+            })
+            
+    user["onedrive_connected_folders"] = connected_folders
+    sessions[session_id] = user
+    signed_token = serializer.dumps(session_id)
+    response = JSONResponse({"status": "linked", "folders_connected": len(req.folders)})
+    response.set_cookie(key="session", value=signed_token, httponly=True, max_age=86400 * 7, samesite="lax")
+    return response
 
 class ConnectFolderRequest(BaseModel):
     folder_id: str = None  # Legacy

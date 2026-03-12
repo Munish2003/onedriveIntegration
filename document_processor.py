@@ -53,7 +53,7 @@ class ProcessorConfig:
 proc_config = ProcessorConfig()
 
 # Supported file types
-SUPPORTED_TYPES = {"pdf", "docx", "pptx"}
+SUPPORTED_TYPES = {"pdf", "docx", "pptx", "txt"}
 
 # Embeddings model (lazily initialized)
 _embeddings_model = None
@@ -106,6 +106,11 @@ def extract_text_from_bytes(file_bytes: bytes, doc_type: str) -> str:
                     parts.append(shape.text_frame.text)
         text = "\n".join(parts).strip()
         logger.info(f"  Extracted {len(prs.slides)} slides from PPTX")
+        
+    elif doc_type == "txt":
+        text = file_bytes.decode('utf-8', errors='ignore').strip()
+        logger.info(f"  Extracted text from TXT")
+        
     else:
         raise ValueError(f"Unsupported type: {doc_type}")
 
