@@ -11,6 +11,7 @@ import asyncio
 import logging
 import datetime
 import msal
+import urllib.parse
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from dotenv import load_dotenv
@@ -22,6 +23,7 @@ import aiohttp
 
 from database import db, encryptor
 import document_processor as doc_proc
+from document_processor import get_file_type
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger("SalezX")
@@ -862,7 +864,12 @@ async def onedrive_files(request: Request, folder_id: str = None, recursive: boo
                             continue
                         if item.get("id") == item_id:
                             continue
-                        all_items.append(item)
+                            
+                        # Only include folders or supported file types
+                        if "folder" in item:
+                            all_items.append(item)
+                        elif "file" in item and get_file_type(item.get("name", "")):
+                            all_items.append(item)
                     
                     # Follow pagination
                     url = data.get("@odata.nextLink")
@@ -879,7 +886,16 @@ async def onedrive_files(request: Request, folder_id: str = None, recursive: boo
                     return JSONResponse({"error": f"Graph API Error: {err}"}, status_code=resp.status)
                 
                 data = await resp.json()
-                return {"files": data.get("value", [])}
+                
+                # Filter non-recursive list for supported files and folders
+                filtered_items = []
+                for item in data.get("value", []):
+                    if "folder" in item:
+                        filtered_items.append(item)
+                    elif "file" in item and get_file_type(item.get("name", "")):
+                        filtered_items.append(item)
+                        
+                return {"files": filtered_items}
 
 @app.get("/api/onedrive/download/{file_id}")
 async def onedrive_download(file_id: str, request: Request):

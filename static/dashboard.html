@@ -9,509 +9,313 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
     <style>
-        *,
-        *::before,
-        *::after {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
             font-family: 'Inter', sans-serif;
             min-height: 100vh;
-            background: linear-gradient(135deg, #0f0c29 0%, #1a1a40 40%, #302b63 100%);
-            color: #fff;
+            background: #f5f7fa;
+            color: #111827;
             overflow-x: hidden;
         }
 
-        .orb {
+        /* Soft background blobs */
+        .blob {
             position: fixed;
             border-radius: 50%;
-            filter: blur(80px);
-            opacity: 0.3;
-            animation: float 8s ease-in-out infinite;
+            filter: blur(90px);
+            opacity: 0.28;
+            animation: drift 12s ease-in-out infinite;
             z-index: 0;
+            pointer-events: none;
+        }
+        .blob-1 { width: 450px; height: 450px; background: #c7d2fe; top: -120px; right: -120px; }
+        .blob-2 { width: 300px; height: 300px; background: #bae6fd; bottom: -80px; left: -80px; animation-delay: -5s; }
+        @keyframes drift {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            40%       { transform: translate(20px, -18px) scale(1.05); }
+            70%       { transform: translate(-14px, 15px) scale(0.95); }
         }
 
-        .orb-1 {
-            width: 400px;
-            height: 400px;
-            background: #6c63ff;
-            top: -100px;
-            right: -100px;
-        }
-
-        .orb-2 {
-            width: 250px;
-            height: 250px;
-            background: #00d2ff;
-            bottom: -50px;
-            left: -50px;
-            animation-delay: -4s;
-        }
-
-        @keyframes float {
-
-            0%,
-            100% {
-                transform: translate(0, 0) scale(1);
-            }
-
-            33% {
-                transform: translate(30px, -20px) scale(1.05);
-            }
-
-            66% {
-                transform: translate(-20px, 20px) scale(0.95);
-            }
-        }
-
+        /* Navbar */
         .navbar {
             position: relative;
             z-index: 10;
             display: flex;
             align-items: center;
             justify-content: space-between;
-            padding: 16px 40px;
-            background: rgba(255, 255, 255, 0.04);
-            backdrop-filter: blur(20px);
-            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            padding: 14px 36px;
+            background: #ffffff;
+            border-bottom: 1px solid #e5e7eb;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+            animation: slide-down 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
         }
-
+        @keyframes slide-down {
+            from { opacity: 0; transform: translateY(-12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
         .navbar .brand {
             font-weight: 700;
-            font-size: 1.2rem;
+            font-size: 1.15rem;
+            color: #111827;
             display: flex;
             align-items: center;
             gap: 10px;
         }
-
         .navbar .brand-icon {
-            width: 32px;
-            height: 32px;
-            background: linear-gradient(135deg, #6c63ff, #00d2ff);
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, #6366f1, #38bdf8);
             border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
+            display: flex; align-items: center; justify-content: center;
         }
-
-        .navbar .brand-icon svg {
-            width: 16px;
-            height: 16px;
-            fill: #fff;
-        }
+        .navbar .brand-icon svg { width: 16px; height: 16px; fill: #fff; }
 
         .logout-btn {
-            padding: 8px 20px;
-            background: rgba(255, 255, 255, 0.08);
-            border: 1px solid rgba(255, 255, 255, 0.12);
-            color: #fff;
+            padding: 7px 18px;
+            background: #fff;
+            border: 1px solid #e5e7eb;
+            color: #374151;
             font-family: 'Inter', sans-serif;
             font-size: 0.85rem;
             font-weight: 500;
             border-radius: 8px;
             cursor: pointer;
             text-decoration: none;
-            transition: all 0.2s ease;
+            transition: border-color 0.2s, background 0.2s, color 0.2s;
         }
-
         .logout-btn:hover {
-            background: rgba(255, 80, 80, 0.15);
-            border-color: rgba(255, 80, 80, 0.3);
+            background: #fef2f2;
+            border-color: #fca5a5;
+            color: #dc2626;
         }
 
+        /* Main content */
         .main {
             position: relative;
             z-index: 5;
             max-width: 1000px;
-            margin: 40px auto;
+            margin: 36px auto;
             padding: 0 24px;
-            animation: fade-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+            animation: fade-up 0.55s cubic-bezier(0.16, 1, 0.3, 1) forwards;
             opacity: 0;
-            transform: translateY(24px);
+            transform: translateY(20px);
         }
-
         @keyframes fade-up {
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .greeting {
-            font-size: 1.8rem;
-            font-weight: 700;
-            margin-bottom: 8px;
-        }
+        .greeting { font-size: 1.75rem; font-weight: 700; margin-bottom: 6px; color: #111827; }
+        .greeting span { color: #6366f1; }
+        .greeting-sub { color: #6b7280; font-size: 0.92rem; margin-bottom: 28px; }
 
-        .greeting span {
-            color: #00d2ff;
-        }
-
-        .greeting-sub {
-            color: rgba(255, 255, 255, 0.5);
-            font-size: 0.95rem;
-            margin-bottom: 32px;
-        }
-
-        .cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-            gap: 16px;
-        }
-
+        /* Info cards */
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
         .info-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(16px);
-            border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 16px;
-            padding: 24px;
-            transition: transform 0.25s ease, border-color 0.25s ease;
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
+            border-radius: 14px;
+            padding: 22px;
+            transition: transform 0.22s, box-shadow 0.22s, border-color 0.22s;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
-
         .info-card:hover {
-            transform: translateY(-4px);
-            border-color: rgba(108, 99, 255, 0.3);
+            transform: translateY(-3px);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.08);
+            border-color: #c7d2fe;
         }
-
         .info-card .label {
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 1px;
-            color: rgba(255, 255, 255, 0.4);
+            color: #9ca3af;
             margin-bottom: 8px;
         }
-
-        .info-card .value {
-            font-size: 1rem;
-            font-weight: 600;
-            word-break: break-all;
-        }
-
+        .info-card .value { font-size: 0.95rem; font-weight: 600; word-break: break-all; color: #111827; }
         .info-card .icon {
-            width: 32px;
-            height: 32px;
-            border-radius: 10px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 12px;
-            font-size: 1rem;
+            width: 32px; height: 32px; border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            margin-bottom: 12px; font-size: 1rem;
         }
+        .icon-name   { background: #ede9fe; }
+        .icon-email  { background: #e0f2fe; }
+        .icon-id     { background: #fce7f3; }
+        .icon-tenant { background: #dcfce7; }
 
-        .icon-name {
-            background: rgba(108, 99, 255, 0.15);
-        }
-
-        .icon-email {
-            background: rgba(0, 210, 255, 0.15);
-        }
-
-        .icon-id {
-            background: rgba(255, 111, 216, 0.15);
-        }
-
-        .icon-tenant {
-            background: rgba(0, 200, 83, 0.15);
-            color: #69f0ae;
-        }
-
+        /* Status bar */
         .status-bar {
-            margin-top: 32px;
+            margin-top: 28px;
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            padding: 10px 20px;
-            background: rgba(0, 200, 83, 0.1);
-            border: 1px solid rgba(0, 200, 83, 0.2);
+            padding: 8px 18px;
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
             border-radius: 50px;
-            font-size: 0.85rem;
-            color: #69f0ae;
+            font-size: 0.82rem;
+            color: #16a34a;
+            font-weight: 500;
         }
-
         .status-dot {
-            width: 8px;
-            height: 8px;
-            background: #69f0ae;
+            width: 7px; height: 7px;
+            background: #22c55e;
             border-radius: 50%;
             animation: pulse 2s ease-in-out infinite;
         }
-
         @keyframes pulse {
-
-            0%,
-            100% {
-                opacity: 1;
-                transform: scale(1);
-            }
-
-            50% {
-                opacity: 0.5;
-                transform: scale(0.8);
-            }
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50%       { opacity: 0.5; transform: scale(0.8); }
         }
 
+        /* Spinner */
         .spinner {
-            width: 36px;
-            height: 36px;
-            border: 3px solid rgba(255, 255, 255, 0.1);
-            border-top-color: #6c63ff;
+            width: 34px; height: 34px;
+            border: 3px solid #e5e7eb;
+            border-top-color: #6366f1;
             border-radius: 50%;
             animation: spin 0.8s linear infinite;
-            margin: 0 auto 16px;
+            margin: 0 auto 14px;
         }
+        @keyframes spin { to { transform: rotate(360deg); } }
 
-        @keyframes spin {
-            to {
-                transform: rotate(360deg);
-            }
-        }
-
-        .onedrive-section {
-            margin-top: 40px;
-            padding-top: 40px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .onedrive-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 24px;
-        }
-
+        /* OneDrive Section */
+        .onedrive-section { margin-top: 36px; padding-top: 36px; border-top: 1px solid #f3f4f6; }
+        .onedrive-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 22px; }
         .onedrive-title {
-            font-size: 1.4rem;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 12px;
+            font-size: 1.25rem; font-weight: 600;
+            display: flex; align-items: center; gap: 10px; color: #111827;
         }
-
-        .onedrive-title svg {
-            width: 24px;
-            height: 24px;
-            fill: #0078D4;
-        }
+        .onedrive-title svg { width: 22px; height: 22px; fill: #0078D4; }
 
         .connect-btn {
-            padding: 10px 24px;
+            padding: 9px 20px;
             background: #0078D4;
             color: #fff;
             font-family: 'Inter', sans-serif;
-            font-size: 0.9rem;
-            font-weight: 600;
-            border-radius: 8px;
-            text-decoration: none;
-            transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
-            border: none;
-            cursor: pointer;
-            display: inline-flex;
-            align-items: center;
-            gap: 8px;
+            font-size: 0.85rem; font-weight: 600;
+            border-radius: 8px; text-decoration: none;
+            transition: background 0.2s, transform 0.2s, box-shadow 0.2s;
+            box-shadow: 0 2px 8px rgba(0, 120, 212, 0.25);
+            border: none; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 7px;
         }
-
         .connect-btn:hover {
-            background: #0086F0;
+            background: #0069bd;
             transform: translateY(-2px);
-            color: #fff;
-            text-decoration: none;
+            box-shadow: 0 6px 16px rgba(0, 120, 212, 0.3);
+            color: #fff; text-decoration: none;
         }
 
-        /* Premium Folder Picker UI */
+        /* Folder Setup Card */
         .folder-setup-card {
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.08);
+            background: #ffffff;
+            border: 1px solid #e5e7eb;
             border-radius: 16px;
-            padding: 32px;
+            padding: 28px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
-
-        .folder-setup-title {
-            font-size: 1.2rem;
-            font-weight: 600;
-            margin-bottom: 12px;
-            color: #fff;
-        }
-
-        .folder-setup-desc {
-            color: rgba(255, 255, 255, 0.6);
-            font-size: 0.95rem;
-            margin-bottom: 24px;
-            line-height: 1.6;
-        }
+        .folder-setup-title { font-size: 1.1rem; font-weight: 600; margin-bottom: 10px; color: #111827; }
+        .folder-setup-desc { color: #6b7280; font-size: 0.92rem; margin-bottom: 22px; line-height: 1.6; }
 
         .folder-grid {
             display: grid;
             grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
+            gap: 14px;
+            margin-bottom: 22px;
             max-height: 400px;
             overflow-y: auto;
-            padding-right: 8px;
+            padding-right: 6px;
         }
-
-        .folder-grid::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .folder-grid::-webkit-scrollbar-thumb {
-            background: rgba(255, 255, 255, 0.2);
-            border-radius: 10px;
-        }
+        .folder-grid::-webkit-scrollbar { width: 5px; }
+        .folder-grid::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
 
         .folder-item {
-            background: rgba(0, 0, 0, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
             border-radius: 12px;
-            padding: 20px;
+            padding: 18px;
             text-align: center;
             cursor: pointer;
             transition: all 0.2s;
             user-select: none;
         }
-
         .folder-item:hover {
-            background: rgba(255, 255, 255, 0.05);
-            border-color: rgba(255, 255, 255, 0.15);
+            background: #eff6ff;
+            border-color: #bfdbfe;
             transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.06);
         }
-
         .folder-item.selected {
-            background: rgba(0, 120, 212, 0.15);
+            background: #eff6ff;
             border-color: #0078D4;
-            box-shadow: 0 4px 15px rgba(0, 120, 212, 0.2);
+            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.15);
         }
-
-        .folder-icon {
-            font-size: 32px;
-            margin-bottom: 12px;
-            filter: drop-shadow(0 4px 6px rgba(0, 0, 0, 0.2));
-        }
-
-        .folder-name {
-            font-weight: 600;
-            font-size: 0.95rem;
-            word-break: break-word;
-            color: #fff;
-            margin-bottom: 4px;
-        }
-
-        .folder-meta {
-            font-size: 0.8rem;
-            color: rgba(255, 255, 255, 0.4);
-        }
+        .folder-icon { font-size: 30px; margin-bottom: 10px; }
+        .folder-name { font-weight: 600; font-size: 0.9rem; word-break: break-word; color: #111827; margin-bottom: 4px; }
+        .folder-meta { font-size: 0.78rem; color: #9ca3af; }
 
         .action-row {
-            display: flex;
-            justify-content: flex-end;
-            padding-top: 24px;
-            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex; justify-content: flex-end;
+            padding-top: 20px; border-top: 1px solid #f3f4f6;
         }
-
         .btn-submit {
-            padding: 12px 32px;
+            padding: 10px 28px;
             background: #0078D4;
             color: #fff;
             font-family: 'Inter', sans-serif;
-            font-size: 1rem;
-            font-weight: 600;
-            border-radius: 8px;
-            border: none;
-            cursor: pointer;
-            opacity: 0.5;
-            pointer-events: none;
+            font-size: 0.95rem; font-weight: 600;
+            border-radius: 8px; border: none; cursor: pointer;
+            opacity: 0.45; pointer-events: none;
             transition: all 0.2s;
         }
+        .btn-submit.active { opacity: 1; pointer-events: auto; }
+        .btn-submit.active:hover { background: #0069bd; transform: translateY(-2px); box-shadow: 0 6px 16px rgba(0,120,212,0.25); }
 
-        .btn-submit.active {
-            opacity: 1;
-            pointer-events: auto;
-        }
-
-        .btn-submit.active:hover {
-            background: #0086F0;
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 120, 212, 0.3);
-        }
-
-        /* Connected Files UI */
+        /* Connected banner */
         .connected-banner {
-            background: rgba(0, 200, 83, 0.1);
-            border: 1px solid rgba(0, 200, 83, 0.2);
+            background: #f0fdf4;
+            border: 1px solid #bbf7d0;
             border-radius: 12px;
-            padding: 24px;
-            margin-bottom: 24px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
+            padding: 20px 24px;
+            margin-bottom: 22px;
+            display: flex; align-items: center; justify-content: space-between;
         }
 
+        /* File list */
         .file-list {
-            margin-top: 24px;
-            background: rgba(255, 255, 255, 0.03);
+            margin-top: 20px;
+            background: #fff;
             border-radius: 12px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
+            border: 1px solid #e5e7eb;
             overflow: hidden;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.04);
         }
-
         .file-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 16px 20px;
-            border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-            transition: background 0.2s;
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid #f3f4f6;
+            transition: background 0.15s;
         }
-
-        .file-item:last-child {
-            border-bottom: none;
-        }
-
-        .file-item:hover {
-            background: rgba(255, 255, 255, 0.06);
-        }
-
-        .file-icon-small {
-            font-size: 1.5rem;
-            margin-right: 16px;
-        }
-
-        .file-name-small {
-            font-weight: 500;
-            font-size: 0.95rem;
-            color: #fff;
-        }
-
-        .file-meta-small {
-            color: rgba(255, 255, 255, 0.4);
-            font-size: 0.8rem;
-            margin-top: 4px;
-        }
+        .file-item:last-child { border-bottom: none; }
+        .file-item:hover { background: #f9fafb; }
+        .file-icon-small { font-size: 1.4rem; margin-right: 14px; }
+        .file-name-small { font-weight: 500; font-size: 0.92rem; color: #111827; }
+        .file-meta-small { color: #9ca3af; font-size: 0.78rem; margin-top: 2px; }
 
         .download-btn {
-            color: #64B5F6;
+            color: #0078D4;
             text-decoration: none;
-            font-size: 0.85rem;
-            font-weight: 600;
-            background: rgba(100, 181, 246, 0.1);
-            padding: 8px 16px;
-            border-radius: 8px;
-            transition: all 0.2s;
+            font-size: 0.82rem; font-weight: 600;
+            background: #eff6ff;
+            padding: 6px 14px; border-radius: 7px;
+            transition: background 0.2s, transform 0.2s;
         }
-
-        .download-btn:hover {
-            background: rgba(100, 181, 246, 0.2);
-            transform: translateY(-1px);
-        }
+        .download-btn:hover { background: #dbeafe; transform: translateY(-1px); }
     </style>
 </head>
 
 <body>
-    <div class="orb orb-1"></div>
-    <div class="orb orb-2"></div>
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
 
     <nav class="navbar">
         <div class="brand">
@@ -552,13 +356,14 @@
                 });
 
                 document.getElementById("main-content").innerHTML = `
-                    <h1 class="greeting">Welcome back, <span>${user.name || "User"}</span> 👋</h1>
+                    <h1 class="greeting">
+                        Welcome back, <span>${user.name || "User"}</span> 👋
+                        <span class="status-bar" style="margin-top: 0; margin-left: 12px; font-size: 0.75rem; padding: 6px 14px; vertical-align: middle;">
+                            <span class="status-dot" style="width: 6px; height: 6px;"></span>
+                            Authenticated & Active
+                        </span>
+                    </h1>
                     <p class="greeting-sub">You're signed in securely with Microsoft Identity.</p>
-
-                    <div class="status-bar">
-                        <div class="status-dot"></div>
-                        Authenticated & Active
-                    </div>
 
                     <div class="onedrive-section">
                         <div class="onedrive-header">
@@ -591,16 +396,16 @@
             container.innerHTML = `
                 <style>
                     .sync-modal {
-                        background: #252526;
-                        border-radius: 12px;
-                        padding: 32px;
+                        background: #ffffff;
+                        border-radius: 16px;
+                        padding: 36px;
                         max-width: 600px;
                         margin: 0 auto;
                         position: relative;
-                        color: #fff;
+                        color: #111827;
                         font-family: 'Segoe UI', 'Inter', sans-serif;
-                        border: 1px solid rgba(255,255,255,0.1);
-                        box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+                        border: 1px solid #e5e7eb;
+                        box-shadow: 0 20px 40px rgba(0,0,0,0.08);
                     }
                     .modal-close {
                         position: absolute;
@@ -608,26 +413,30 @@
                         right: 24px;
                         background: none;
                         border: none;
-                        color: #a0a0a0;
+                        color: #9ca3af;
                         font-size: 20px;
                         cursor: pointer;
+                        transition: color 0.2s;
                     }
-                    .sync-modal h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; }
-                    .sync-modal p { font-size: 0.95rem; color: #b0b0b0; margin-bottom: 24px; }
+                    .modal-close:hover { color: #4b5563; }
+                    .sync-modal h2 { font-size: 1.4rem; font-weight: 600; margin-bottom: 8px; color: #111827; }
+                    .sync-modal p { font-size: 0.95rem; color: #6b7280; margin-bottom: 28px; }
                     
                     .option-card {
-                        border: 1px solid rgba(255,255,255,0.1);
-                        border-radius: 8px;
-                        padding: 16px;
+                        border: 1px solid #e5e7eb;
+                        border-radius: 12px;
+                        padding: 20px;
                         margin-bottom: 16px;
                         cursor: pointer;
                         transition: all 0.2s;
-                        background: #2d2d30;
+                        background: #f9fafb;
                         position: relative;
                     }
+                    .option-card:hover { border-color: #d1d5db; background: #f3f4f6; }
                     .option-card.selected {
-                        border-color: #5c5cff;
-                        background: rgba(92, 92, 255, 0.05);
+                        border-color: #0078D4;
+                        background: #eff6ff;
+                        box-shadow: 0 4px 12px rgba(0, 120, 212, 0.08);
                     }
                     .option-header {
                         display: flex;
@@ -637,17 +446,18 @@
                     }
                     /* Custom Radio */
                     .radio-outer {
-                        width: 20px; height: 20px; border-radius: 50%; border: 2px solid #888;
+                        width: 20px; height: 20px; border-radius: 50%; border: 2px solid #d1d5db;
                         display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+                        background: #fff;
                     }
-                    .option-card.selected .radio-outer { border-color: #5c5cff; }
+                    .option-card.selected .radio-outer { border-color: #0078D4; }
                     .radio-inner {
                         width: 10px; height: 10px; border-radius: 50%; background: transparent; transition: 0.2s;
                     }
-                    .option-card.selected .radio-inner { background: #5c5cff; }
+                    .option-card.selected .radio-inner { background: #0078D4; }
                     
-                    .option-title { font-weight: 600; font-size: 1rem; color: #fff; }
-                    .option-desc { font-size: 0.85rem; color: #a0a0a0; margin-left: 32px; }
+                    .option-title { font-weight: 600; font-size: 1rem; color: #111827; }
+                    .option-desc { font-size: 0.85rem; color: #6b7280; margin-left: 32px; }
                     
                     .folder-select-area {
                         margin-left: 32px;
@@ -660,45 +470,53 @@
                     
                     .search-input {
                         width: 100%;
-                        background: #1e1e1e;
-                        border: 1px solid rgba(255,255,255,0.1);
-                        color: #fff;
+                        background: #ffffff;
+                        border: 1px solid #d1d5db;
+                        color: #111827;
                         padding: 10px 16px 10px 36px;
-                        border-radius: 6px;
+                        border-radius: 8px;
                         font-size: 0.9rem;
                         margin-bottom: 12px;
-                        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%23888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>');
+                        background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="%239ca3af" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>');
                         background-repeat: no-repeat;
                         background-position: 12px center;
+                        box-shadow: 0 1px 2px rgba(0,0,0,0.02) inset;
                     }
+                    .search-input:focus { outline: none; border-color: #0078D4; box-shadow: 0 0 0 3px rgba(0,120,212,0.1); }
                     
                     .folder-list {
                         max-height: 200px;
                         overflow-y: auto;
-                        border-radius: 6px;
+                        border-radius: 8px;
+                        border: 1px solid #f3f4f6;
+                        background: #fff;
                     }
                     .folder-list::-webkit-scrollbar { width: 6px; }
-                    .folder-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 10px; }
+                    .folder-list::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 10px; }
                     
                     .folder-row {
                         display: flex;
                         align-items: center;
-                        padding: 8px 0;
+                        padding: 10px 14px;
                         gap: 12px;
                         cursor: pointer;
+                        border-bottom: 1px solid #f9fafb;
+                        transition: background 0.15s;
                     }
-                    .folder-row:hover { background: rgba(255,255,255,0.02); }
+                    .folder-row:last-child { border-bottom: none; }
+                    .folder-row:hover { background: #f3f4f6; }
                     .folder-checkbox {
                         width: 18px; height: 18px;
-                        border: 1px solid #888;
+                        border: 1px solid #d1d5db;
                         border-radius: 4px;
                         display: flex; align-items: center; justify-content: center;
-                        background: transparent;
+                        background: #fff;
                         flex-shrink: 0;
+                        transition: all 0.15s;
                     }
                     .folder-checkbox.checked {
-                        background: #5c5cff;
-                        border-color: #5c5cff;
+                        background: #0078D4;
+                        border-color: #0078D4;
                     }
                     .folder-checkbox.checked::after {
                         content: '';
@@ -710,14 +528,15 @@
                     }
                     
                     .info-box {
-                        background: rgba(92, 92, 255, 0.1);
+                        background: #eff6ff;
+                        border: 1px solid #bfdbfe;
                         border-radius: 8px;
-                        padding: 12px 16px;
+                        padding: 14px 18px;
                         display: flex;
                         gap: 12px;
                         align-items: flex-start;
-                        margin-top: 16px;
-                        color: #b0b0b0;
+                        margin-top: 20px;
+                        color: #1e3a8a;
                         font-size: 0.9rem;
                     }
                     
@@ -729,25 +548,28 @@
                     }
                     .btn-cancel {
                         background: transparent;
-                        color: #5c5cff;
-                        border: 1px solid transparent;
+                        color: #4b5563;
+                        border: 1px solid #d1d5db;
                         padding: 10px 20px;
-                        border-radius: 6px;
+                        border-radius: 8px;
                         font-weight: 600;
                         cursor: pointer;
+                        transition: all 0.2s;
                     }
-                    .btn-cancel:hover { background: rgba(92, 92, 255, 0.1); }
+                    .btn-cancel:hover { background: #f3f4f6; color: #111827; }
                     .btn-continue {
-                        background: #5c5cff;
+                        background: #0078D4;
                         color: #fff;
                         border: none;
                         padding: 10px 20px;
-                        border-radius: 6px;
+                        border-radius: 8px;
                         font-weight: 600;
                         cursor: pointer;
+                        transition: background 0.2s, transform 0.2s;
+                        box-shadow: 0 2px 6px rgba(0, 120, 212, 0.2);
                     }
-                    .btn-continue:hover { background: #4a4ae6; }
-                    .btn-continue:disabled { opacity: 0.5; cursor: not-allowed; }
+                    .btn-continue:hover { background: #0069bd; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(0, 120, 212, 0.25); }
+                    .btn-continue:disabled { opacity: 0.5; cursor: not-allowed; transform: none; box-shadow: none; }
                 </style>
                 
                 <div class="sync-modal">
@@ -760,7 +582,7 @@
                         <div class="option-header">
                             <div class="radio-outer"><div class="radio-inner"></div></div>
                             <div class="option-title" style="display:flex;align-items:center;gap:8px;">
-                                Full access <span style="font-size:0.75rem;background:rgba(255,255,255,0.1);padding:3px 8px;border-radius:12px;color:#ccc;">Recommended</span>
+                                Full access <span style="font-size:0.75rem;background:#f3f4f6;border:1px solid #e5e7eb;padding:3px 8px;border-radius:12px;color:#4b5563;">Recommended</span>
                             </div>
                         </div>
                         <div class="option-desc">
@@ -796,7 +618,7 @@
                     </div>
                     
                     <div class="info-box" id="general-info-box" style="display:none;">
-                        <div style="color:#5c5cff;font-weight:bold;font-size:1.1rem;margin-top:-2px;">ⓘ</div>
+                        <div style="color:#0078D4;font-weight:bold;font-size:1.1rem;margin-top:-2px;">ⓘ</div>
                         <div>You can update your preferences anytime from your integration settings.</div>
                     </div>
                     
@@ -876,7 +698,7 @@
                     <div class="folder-row" onclick="event.stopPropagation(); toggleFolder('${f.id}')">
                         <div class="folder-checkbox ${checkedClass}"></div>
                         <div style="font-size:1.2rem;">📁</div>
-                        <div style="font-size:0.95rem;color:#fff;">${f.name}</div>
+                        <div style="font-size:0.95rem;color:#111827;">${f.name}</div>
                     </div>
                 `;
 
@@ -986,7 +808,7 @@
                                 Disconnect
                             </button>
                         </div>
-                        <div style="font-weight: 600; font-size: 1rem; color: #fff; margin-bottom: 4px; word-break: break-all;">${f.folder_name}</div>
+                        <div style="font-weight: 600; font-size: 1rem; color: #111827; margin-bottom: 4px; word-break: break-all;">${f.folder_name}</div>
                         <div style="font-size: 0.8rem; color: #69f0ae;">✓ Active Sync</div>
                     </div>
                 `;
@@ -994,10 +816,10 @@
 
             html += `
                 </div>
-                <div id="active-folder-view" style="display: none; border-top: 1px solid rgba(255,255,255,0.1); padding-top: 32px;">
+                <div id="active-folder-view" style="display: none; border-top: 1px solid #e5e7eb; padding-top: 32px;">
                     <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
-                        <h3 style="font-size: 1.1rem; font-weight: 600; margin: 0;" id="active-folder-title">📄 Files</h3>
-                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; color: rgba(255,255,255,0.7);">
+                        <h3 style="font-size: 1.1rem; font-weight: 600; margin: 0; color: #111827;" id="active-folder-title">📄 Files</h3>
+                        <label style="display: flex; align-items: center; gap: 8px; font-size: 0.85rem; cursor: pointer; color: #6b7280;">
                             <input type="checkbox" id="recursive-toggle" onchange="fetchConnectedFiles()" style="accent-color: #0078D4;">
                             Show files in subfolders
                         </label>
@@ -1026,13 +848,13 @@
 
             // Highlight the selected card
             document.querySelectorAll('[id^="card-"]').forEach(el => {
-                el.style.border = '1px solid rgba(255, 255, 255, 0.08)';
-                el.style.background = 'rgba(255, 255, 255, 0.03)';
+                el.style.border = '1px solid #e5e7eb';
+                el.style.background = '#f9fafb';
             });
             const selectedCard = document.getElementById(`card-${folderId}`);
             if (selectedCard) {
                 selectedCard.style.border = '1px solid #0078D4';
-                selectedCard.style.background = 'rgba(0, 120, 212, 0.1)';
+                selectedCard.style.background = '#eff6ff';
             }
 
             // Show the files view
@@ -1070,14 +892,14 @@
                                         <div class="file-meta-small">${f.size || 0} bytes ${f.parentReference && f.parentReference.path ? ` • ${f.parentReference.path.replace('/drive/root:/', '').split('/').pop()}` : ''}</div>
                                     </div>
                                 </div>
-                                ${!isFolder ? `<a href="/api/onedrive/download/${f.id}" class="download-btn" target="_blank">Download</a>` : '<span style="color: rgba(255,255,255,0.3); font-size: 0.8rem;">Folder</span>'}
+                                ${!isFolder ? `<a href="/api/onedrive/download/${f.id}" class="download-btn" target="_blank">Download</a>` : '<span style="color: #9ca3af; font-size: 0.8rem;">Folder</span>'}
                             </div>
                         `;
                     });
                     html += '</div>';
                     container.innerHTML = html;
                 } else {
-                    container.innerHTML = '<div style="padding: 32px; text-align: center; opacity: 0.6; background: rgba(255,255,255,0.03); border-radius: 12px; border: 1px dashed rgba(255,255,255,0.1);">This folder is empty.</div>';
+                    container.innerHTML = '<div style="padding: 32px; text-align: center; opacity: 0.6; background: #f9fafb; border-radius: 12px; border: 1px dashed #d1d5db; color: #4b5563;">This folder is empty.</div>';
                 }
             } catch (err) {
                 document.getElementById('file-results').innerHTML = '<div style="color: #ff5252;">Failed to load files.</div>';
