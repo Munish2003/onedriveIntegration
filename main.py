@@ -410,14 +410,15 @@ async def connect_folder(req: ConnectFolderRequest, request: Request, background
                         print(f"⚠️ Failed to create webhook subscription: {await resp.text()}")
 
     # ── Save to PostgreSQL ──────────────────────────────
-    # Step 1: Ensure company exists (upsert by tenant_id)
+    # ENCRYPTION RULE: Lookup fields (used in WHERE/UNIQUE) stay PLAINTEXT.
+    #                  Sensitive data (names, tokens, content) is ENCRYPTED.
+
+    # Step 1: Ensure company exists (upsert by tenant_id — plaintext for lookup)
     tenant_id = user.get("tenant_id", "")
-    enc_tenant = encryptor.encrypt(tenant_id) if encryptor else tenant_id
-    enc_client = encryptor.encrypt(CLIENT_ID) if encryptor else CLIENT_ID
     enc_company_name = encryptor.encrypt(f"Company-{tenant_id[:8]}") if encryptor else f"Company-{tenant_id[:8]}"
 
     company_row = await db.fetchrow(
-        "SELECT id FROM companies WHERE tenant_id = $1", enc_tenant
+        "SELECT id FROM companies WHERE tenant_id = $1", tenant_id
     )
     if company_row:
         company_id = str(company_row["id"])
@@ -425,40 +426,38 @@ async def connect_folder(req: ConnectFolderRequest, request: Request, background
         company_id = str(uuid.uuid4())
         await db.execute(
             "INSERT INTO companies (id, name, tenant_id, client_id) VALUES ($1, $2, $3, $4)",
-            uuid.UUID(company_id), enc_company_name, enc_tenant, enc_client
+            uuid.UUID(company_id), enc_company_name, tenant_id, CLIENT_ID
         )
         logger.info(f"Created company: {company_id}")
 
-    # Step 2: Ensure employee exists (upsert by email)
+    # Step 2: Ensure employee exists (ms_id plaintext for UNIQUE lookup, email & name encrypted)
+    ms_id = user.get("ms_id", str(uuid.uuid4()))
     enc_email = encryptor.encrypt(user["email"]) if encryptor else user["email"]
     enc_name = encryptor.encrypt(user["name"]) if encryptor else user["name"]
 
     employee_row = await db.fetchrow(
-        "SELECT id FROM employee WHERE email = $1", enc_email
+        "SELECT id FROM employee WHERE ms_id = $1", ms_id
     )
     if employee_row:
         employee_id = str(employee_row["id"])
     else:
         employee_id = str(uuid.uuid4())
         await db.execute(
-            "INSERT INTO employee (id, company_id, email, name, role) VALUES ($1, $2, $3, $4, $5)",
-            uuid.UUID(employee_id), uuid.UUID(company_id), enc_email, enc_name, "admin"
+            "INSERT INTO employee (id, company_id, ms_id, email, name, role) VALUES ($1, $2, $3, $4, $5, $6)",
+            uuid.UUID(employee_id), uuid.UUID(company_id), ms_id, enc_email, enc_name, "admin"
         )
         logger.info(f"Created employee: {employee_id}")
 
-    # Step 3: Ensure OneDrive connection exists
-    enc_drive = encryptor.encrypt(drive_id) if encryptor else drive_id
+    # Step 3: Ensure OneDrive connection exists (drive_id plaintext for UNIQUE lookup, tokens encrypted)
     enc_access_token = encryptor.encrypt(access_token) if encryptor else access_token
     enc_refresh = encryptor.encrypt(user.get("onedrive_refresh_token", "")) if encryptor else user.get("onedrive_refresh_token", "")
-    enc_access_type = encryptor.encrypt("specific_folders") if encryptor else "specific_folders"
 
     conn_row = await db.fetchrow(
         "SELECT id FROM onedrive_connections WHERE company_id = $1 AND drive_id = $2",
-        uuid.UUID(company_id), enc_drive
+        uuid.UUID(company_id), drive_id
     )
     if conn_row:
         connection_id = str(conn_row["id"])
-        # Update tokens
         await db.execute(
             "UPDATE onedrive_connections SET access_token = $1, refresh_token = $2, updated_at = NOW() WHERE id = $3",
             enc_access_token, enc_refresh, uuid.UUID(connection_id)
@@ -470,19 +469,18 @@ async def connect_folder(req: ConnectFolderRequest, request: Request, background
                (id, company_id, employee_id, drive_id, access_type, access_token, refresh_token)
                VALUES ($1, $2, $3, $4, $5, $6, $7)""",
             uuid.UUID(connection_id), uuid.UUID(company_id), uuid.UUID(employee_id),
-            enc_drive, enc_access_type, enc_access_token, enc_refresh
+            drive_id, "specific_folders", enc_access_token, enc_refresh
         )
         logger.info(f"Created OneDrive connection: {connection_id}")
 
-    # Step 4: Save tracked folder
-    enc_folder_id = encryptor.encrypt(item_id) if encryptor else item_id
+    # Step 4: Save tracked folder (folder_id plaintext for UNIQUE lookup, folder_name/delta/sub encrypted)
     enc_folder_name = encryptor.encrypt(req.name) if encryptor else req.name
     enc_delta = encryptor.encrypt(delta_link) if encryptor and delta_link else (delta_link or "")
     enc_sub_id = encryptor.encrypt(subscription_id) if encryptor and subscription_id else (subscription_id or "")
 
     folder_row = await db.fetchrow(
         "SELECT id FROM tracked_folders WHERE onedrive_connection_id = $1 AND folder_id = $2",
-        uuid.UUID(connection_id), enc_folder_id
+        uuid.UUID(connection_id), item_id
     )
     if folder_row:
         tracked_folder_id = str(folder_row["id"])
@@ -497,7 +495,7 @@ async def connect_folder(req: ConnectFolderRequest, request: Request, background
                (id, company_id, onedrive_connection_id, folder_id, folder_name, delta_link, subscription_id)
                VALUES ($1, $2, $3, $4, $5, $6, $7)""",
             uuid.UUID(tracked_folder_id), uuid.UUID(company_id), uuid.UUID(connection_id),
-            enc_folder_id, enc_folder_name, enc_delta, enc_sub_id
+            item_id, enc_folder_name, enc_delta, enc_sub_id
         )
         logger.info(f"Created tracked folder: {tracked_folder_id}")
 

@@ -3,6 +3,8 @@ Document Processor — OneDrive File Processing Pipeline
 Downloads files from OneDrive, extracts text in-memory, generates embeddings,
 encrypts sensitive data, and stores results in PostgreSQL.
 Also handles sync: detects files deleted from OneDrive and removes them from PG.
+
+OPTIMIZED: Parallel downloads, concurrent encryption, batched DB writes.
 """
 
 import os
@@ -10,7 +12,7 @@ import io
 import uuid
 import asyncio
 import logging
-from typing import List, Optional, Set
+from typing import List, Optional, Set, Tuple
 from datetime import datetime
 
 import aiohttp
@@ -26,6 +28,11 @@ from database import db, encryptor
 load_dotenv()
 logger = logging.getLogger("DocProcessor")
 
+# Deduplication: prevent processing the same file twice within DEDUP_WINDOW seconds
+# Key = file_id, Value = timestamp of last processing
+_processing_lock: dict[str, float] = {}
+DEDUP_WINDOW = 30  # seconds
+
 # ==============================================================================
 # CONFIGURATION
 # ==============================================================================
@@ -39,6 +46,9 @@ class ProcessorConfig:
     CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "200"))
     EMBEDDING_BATCH_SIZE = int(os.getenv("EMBEDDING_BATCH_SIZE", "50"))
     MAX_FILE_SIZE_MB = int(os.getenv("MAX_FILE_SIZE_MB", "50"))
+    # Concurrency controls
+    MAX_PARALLEL_DOWNLOADS = int(os.getenv("MAX_PARALLEL_DOWNLOADS", "5"))
+    MAX_PARALLEL_FILES = int(os.getenv("MAX_PARALLEL_FILES", "3"))
 
 proc_config = ProcessorConfig()
 
@@ -108,7 +118,7 @@ def extract_text_from_bytes(file_bytes: bytes, doc_type: str) -> str:
 
 
 # ==============================================================================
-# ONEDRIVE FILE DOWNLOAD
+# ONEDRIVE FILE OPERATIONS (Shared session for batch efficiency)
 # ==============================================================================
 async def download_file_from_onedrive(
     access_token: str, drive_id: str, file_id: str
@@ -123,6 +133,29 @@ async def download_file_from_onedrive(
                 err = await resp.text()
                 raise ValueError(f"Download failed ({resp.status}): {err}")
             return await resp.read()
+
+
+async def download_files_parallel(
+    access_token: str, drive_id: str, file_items: List[dict]
+) -> List[Tuple[dict, Optional[bytes]]]:
+    """Download multiple files in parallel with concurrency limit."""
+    semaphore = asyncio.Semaphore(proc_config.MAX_PARALLEL_DOWNLOADS)
+    results = []
+
+    async def _download_one(file_item):
+        async with semaphore:
+            try:
+                file_bytes = await download_file_from_onedrive(
+                    access_token, drive_id, file_item["id"]
+                )
+                return (file_item, file_bytes)
+            except Exception as e:
+                logger.error(f"  ❌ Download failed for {file_item.get('name')}: {e}")
+                return (file_item, None)
+
+    tasks = [_download_one(f) for f in file_items]
+    results = await asyncio.gather(*tasks)
+    return results
 
 
 async def list_folder_files_recursive(
@@ -177,6 +210,16 @@ async def embed_texts_batch(texts: List[str]) -> List[List[float]]:
 
 
 # ==============================================================================
+# ENCRYPTION HELPERS (Concurrent for large batches)
+# ==============================================================================
+def encrypt_chunks_batch(chunks: List[str]) -> List[str]:
+    """Encrypt all chunks in one go (CPU-bound, run in thread)."""
+    if not encryptor:
+        return chunks
+    return [encryptor.encrypt(c) for c in chunks]
+
+
+# ==============================================================================
 # SINGLE FILE PROCESSING
 # ==============================================================================
 async def process_single_file(
@@ -203,11 +246,21 @@ async def process_single_file(
         return None
 
     try:
+        # Dedup check: skip if this file was processed very recently
+        import time
+        now = time.time()
+        dedup_key = f"{tracked_folder_id}:{file_id}"
+        last_processed = _processing_lock.get(dedup_key, 0)
+        if now - last_processed < DEDUP_WINDOW:
+            logger.info(f"  ⏭️  Skipping duplicate webhook for: {file_name} (processed {int(now - last_processed)}s ago)")
+            return None
+        _processing_lock[dedup_key] = now
+
         # 1. Download raw bytes from OneDrive
         logger.info(f"  📥 Downloading: {file_name} ({size_bytes} bytes)")
         file_bytes = await download_file_from_onedrive(access_token, drive_id, file_id)
 
-        # 2. Extract text in-memory
+        # 2. Extract text in-memory (CPU-bound → run in thread)
         text = await asyncio.to_thread(extract_text_from_bytes, file_bytes, file_type)
 
         # 3. Chunk text
@@ -226,10 +279,10 @@ async def process_single_file(
         # 4. Generate embeddings
         embeddings = await embed_texts_batch(chunks)
 
-        # 5. Encrypt sensitive fields
-        enc_file_id = encryptor.encrypt(file_id) if encryptor else file_id
+        # 5. Encrypt sensitive fields (CPU-bound → run in thread for large batches)
         enc_file_name = encryptor.encrypt(file_name) if encryptor else file_name
         enc_mime_type = encryptor.encrypt(mime_type) if encryptor else mime_type
+        encrypted_chunks = await asyncio.to_thread(encrypt_chunks_batch, chunks)
 
         # 6. Parse last_modified
         last_mod_dt = None
@@ -239,16 +292,16 @@ async def process_single_file(
             except Exception:
                 pass
 
-        # 7. Upsert into PostgreSQL (delete old + insert new in a transaction)
+        # 7. Upsert into PostgreSQL — BATCHED transaction
         doc_uuid = str(uuid.uuid4())
         pool = await db.get_pool()
 
         async with pool.acquire() as conn:
             async with conn.transaction():
-                # Delete any existing document with same file_id for this folder
+                # Delete old document + embeddings (cascade)
                 await conn.execute(
                     "DELETE FROM documents WHERE tracked_folder_id = $1 AND file_id = $2",
-                    uuid.UUID(tracked_folder_id), enc_file_id
+                    uuid.UUID(tracked_folder_id), file_id
                 )
 
                 # Insert document record
@@ -261,24 +314,23 @@ async def process_single_file(
                     uuid.UUID(company_id),
                     uuid.UUID(onedrive_connection_id),
                     uuid.UUID(tracked_folder_id),
-                    enc_file_id, enc_file_name, enc_mime_type,
+                    file_id, enc_file_name, enc_mime_type,
                     size_bytes, last_mod_dt
                 )
 
-                # Insert embeddings
-                embedding_rows = []
-                for idx, (chunk, emb) in enumerate(zip(chunks, embeddings)):
-                    enc_chunk = encryptor.encrypt(chunk) if encryptor else chunk
-                    emb_str = "[" + ",".join(map(str, emb)) + "]"
-                    embedding_rows.append((
+                # Batch insert all embeddings at once
+                embedding_rows = [
+                    (
                         uuid.uuid4(),
                         uuid.UUID(company_id),
                         uuid.UUID(onedrive_connection_id),
                         uuid.UUID(doc_uuid),
                         idx,
                         enc_chunk,
-                        emb_str,
-                    ))
+                        "[" + ",".join(map(str, emb)) + "]",
+                    )
+                    for idx, (enc_chunk, emb) in enumerate(zip(encrypted_chunks, embeddings))
+                ]
 
                 await conn.executemany(
                     """INSERT INTO document_embeddings
@@ -297,7 +349,7 @@ async def process_single_file(
 
 
 # ==============================================================================
-# BATCH FOLDER PROCESSING (with sync detection)
+# BATCH FOLDER PROCESSING (Parallel + Sync detection)
 # ==============================================================================
 async def process_folder_batch(
     access_token: str,
@@ -308,10 +360,11 @@ async def process_folder_batch(
     folder_item_id: str,
 ):
     """
-    Batch process all files in a connected folder.
+    Batch process all files in a connected folder — PARALLEL where possible.
     1. Lists all files recursively from OneDrive
-    2. Processes each supported file (download → extract → embed → encrypt → store)
-    3. SYNC: Deletes any files from PG that no longer exist in OneDrive
+    2. Downloads files in parallel (up to MAX_PARALLEL_DOWNLOADS)
+    3. Processes files in parallel (up to MAX_PARALLEL_FILES)
+    4. SYNC: Batch-deletes any files from PG that no longer exist in OneDrive
     """
     logger.info(f"🚀 Starting batch processing for folder {folder_item_id}...")
 
@@ -323,60 +376,152 @@ async def process_folder_batch(
     supported_files = [f for f in onedrive_files if get_file_type(f.get("name", ""))]
     logger.info(f"📄 {len(supported_files)} supported files (PDF/DOCX/PPTX)")
 
-    # Step 2: Process each file
+    if not supported_files:
+        logger.info("No supported files to process.")
+        return {"processed": 0, "skipped": 0, "failed": 0, "synced_deleted": 0}
+
+    # Step 2: Download ALL files in parallel
+    logger.info(f"📥 Downloading {len(supported_files)} files in parallel (max {proc_config.MAX_PARALLEL_DOWNLOADS} concurrent)...")
+    downloaded = await download_files_parallel(access_token, drive_id, supported_files)
+
+    # Step 3: Process downloaded files in parallel (extract → chunk → embed → encrypt → store)
+    semaphore = asyncio.Semaphore(proc_config.MAX_PARALLEL_FILES)
     success_count = 0
     skip_count = 0
     fail_count = 0
     processed_file_ids: Set[str] = set()
 
-    for file_item in supported_files:
+    async def _process_one(file_item: dict, file_bytes: Optional[bytes]):
+        nonlocal success_count, skip_count, fail_count
+        if file_bytes is None:
+            fail_count += 1
+            return
+
         file_id = file_item["id"]
-        # Keep track of the ENCRYPTED file_id we store in PG
-        enc_file_id = encryptor.encrypt(file_id) if encryptor else file_id
-        processed_file_ids.add(enc_file_id)
+        file_name = file_item.get("name", "unknown")
+        mime_type = file_item.get("file", {}).get("mimeType", "")
+        size_bytes = file_item.get("size", 0)
+        last_modified = file_item.get("lastModifiedDateTime")
+        file_type = get_file_type(file_name)
 
-        result = await process_single_file(
-            access_token=access_token,
-            drive_id=drive_id,
-            company_id=company_id,
-            onedrive_connection_id=onedrive_connection_id,
-            tracked_folder_id=tracked_folder_id,
-            file_item=file_item,
-        )
-        if result:
-            success_count += 1
-        else:
-            skip_count += 1
+        async with semaphore:
+            try:
+                # Extract text (CPU-bound)
+                text = await asyncio.to_thread(extract_text_from_bytes, file_bytes, file_type)
 
-    # Step 3: SYNC — Delete files from PG that no longer exist in OneDrive
+                # Chunk
+                splitter = RecursiveCharacterTextSplitter(
+                    chunk_size=proc_config.CHUNK_SIZE,
+                    chunk_overlap=proc_config.CHUNK_OVERLAP,
+                    add_start_index=True,
+                )
+                chunks = splitter.split_text(text)
+                if not chunks:
+                    skip_count += 1
+                    return
+
+                logger.info(f"  ✂️  {file_name}: {len(chunks)} chunks")
+
+                # Embed
+                embeddings = await embed_texts_batch(chunks)
+
+                # Encrypt (CPU-bound)
+                enc_file_name = encryptor.encrypt(file_name) if encryptor else file_name
+                enc_mime_type = encryptor.encrypt(mime_type) if encryptor else mime_type
+                encrypted_chunks = await asyncio.to_thread(encrypt_chunks_batch, chunks)
+
+                processed_file_ids.add(file_id)
+
+                # Parse timestamp
+                last_mod_dt = None
+                if last_modified:
+                    try:
+                        last_mod_dt = datetime.fromisoformat(last_modified.replace("Z", "+00:00"))
+                    except Exception:
+                        pass
+
+                # DB: single transaction for delete + insert doc + insert embeddings
+                doc_uuid = str(uuid.uuid4())
+                pool = await db.get_pool()
+
+                async with pool.acquire() as conn:
+                    async with conn.transaction():
+                        await conn.execute(
+                            "DELETE FROM documents WHERE tracked_folder_id = $1 AND file_id = $2",
+                            uuid.UUID(tracked_folder_id), file_id
+                        )
+
+                        await conn.execute(
+                            """INSERT INTO documents 
+                               (id, company_id, onedrive_connection_id, tracked_folder_id,
+                                file_id, file_name, mime_type, size_bytes, last_modified_at)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)""",
+                            uuid.UUID(doc_uuid),
+                            uuid.UUID(company_id),
+                            uuid.UUID(onedrive_connection_id),
+                            uuid.UUID(tracked_folder_id),
+                            file_id, enc_file_name, enc_mime_type,
+                            size_bytes, last_mod_dt
+                        )
+
+                        embedding_rows = [
+                            (
+                                uuid.uuid4(), uuid.UUID(company_id),
+                                uuid.UUID(onedrive_connection_id), uuid.UUID(doc_uuid),
+                                idx, enc_chunk,
+                                "[" + ",".join(map(str, emb)) + "]",
+                            )
+                            for idx, (enc_chunk, emb) in enumerate(zip(encrypted_chunks, embeddings))
+                        ]
+
+                        await conn.executemany(
+                            """INSERT INTO document_embeddings
+                               (id, company_id, onedrive_connection_id, document_id,
+                                chunk_index, text_content, embedding)
+                               VALUES ($1, $2, $3, $4, $5, $6, $7::vector)""",
+                            embedding_rows
+                        )
+
+                logger.info(f"  ✅ {file_name}: stored {len(chunks)} chunks")
+                success_count += 1
+
+            except Exception as e:
+                logger.error(f"  ❌ {file_name}: {e}")
+                fail_count += 1
+
+    # Run all file processing tasks in parallel (capped by semaphore)
+    tasks = [_process_one(fi, fb) for fi, fb in downloaded]
+    await asyncio.gather(*tasks)
+
+    # Step 4: SYNC — Batch-delete stale files that no longer exist in OneDrive
+    stale_count = 0
     if processed_file_ids:
         existing_docs = await db.fetch(
             "SELECT id, file_id FROM documents WHERE tracked_folder_id = $1",
             uuid.UUID(tracked_folder_id)
         )
-        stale_doc_ids = []
-        for doc in existing_docs:
-            if doc["file_id"] not in processed_file_ids:
-                stale_doc_ids.append(doc["id"])
+        stale_doc_ids = [doc["id"] for doc in existing_docs if doc["file_id"] not in processed_file_ids]
 
         if stale_doc_ids:
+            # Batch delete all stale docs in a single transaction
             pool = await db.get_pool()
             async with pool.acquire() as conn:
                 async with conn.transaction():
-                    for doc_id in stale_doc_ids:
-                        await conn.execute(
-                            "DELETE FROM documents WHERE id = $1", doc_id
-                        )
-            logger.info(f"🧹 SYNC: Removed {len(stale_doc_ids)} stale documents from PG")
+                    await conn.execute(
+                        "DELETE FROM documents WHERE id = ANY($1::uuid[])",
+                        stale_doc_ids
+                    )
+            stale_count = len(stale_doc_ids)
+            logger.info(f"🧹 SYNC: Batch-removed {stale_count} stale documents from PG")
 
     logger.info(
-        f"✅ Batch complete: {success_count} processed, {skip_count} skipped, {fail_count} failed"
+        f"✅ Batch complete: {success_count} processed, {skip_count} skipped, {fail_count} failed, {stale_count} synced"
     )
     return {
         "processed": success_count,
         "skipped": skip_count,
         "failed": fail_count,
-        "synced_deleted": len(stale_doc_ids) if processed_file_ids else 0,
+        "synced_deleted": stale_count,
     }
 
 
@@ -404,11 +549,9 @@ async def delete_file_by_onedrive_id(
     Delete a single file (and its embeddings) from PG by its OneDrive file_id.
     Used by webhook when a file is deleted from OneDrive.
     """
-    enc_file_id = encryptor.encrypt(onedrive_file_id) if encryptor else onedrive_file_id
-
     result = await db.execute(
         "DELETE FROM documents WHERE tracked_folder_id = $1 AND file_id = $2",
-        uuid.UUID(tracked_folder_id), enc_file_id
+        uuid.UUID(tracked_folder_id), onedrive_file_id
     )
     logger.info(f"🗑️  Deleted file {onedrive_file_id} from PG (cascade to embeddings)")
     return result
