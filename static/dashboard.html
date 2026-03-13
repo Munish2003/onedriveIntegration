@@ -637,7 +637,8 @@
                 const data = await res.json();
 
                 if (data.folders) {
-                    allFoldersList = data.folders.map(f => ({ ...f, checked: false }));
+                    const connectedIds = (currentUser && currentUser.connected_folders) ? currentUser.connected_folders.map(cf => cf.item_id || cf.folder_id) : [];
+                    allFoldersList = data.folders.map(f => ({ ...f, checked: false, alreadyConnected: connectedIds.includes(f.item_id) || connectedIds.includes(f.id) }));
                     renderFolders();
                 } else {
                     document.getElementById('list-folders').innerHTML = '<div style="padding:10px;color:red;">Error loading folders.</div>';
@@ -656,7 +657,7 @@
                 document.getElementById('opt-specific').classList.remove('selected');
 
                 if (allFoldersList.length > 0) {
-                    allFoldersList.forEach(f => f.checked = true);
+                    allFoldersList.forEach(f => f.checked = !f.alreadyConnected);
                     renderFolders();
                 }
             } else {
@@ -673,7 +674,7 @@
 
         function toggleFolder(id) {
             const folder = allFoldersList.find(f => f.id === id);
-            if (folder) {
+            if (folder && !folder.alreadyConnected) {
                 folder.checked = !folder.checked;
                 renderFolders();
                 updateSubmitButton();
@@ -693,12 +694,16 @@
             allFoldersList.forEach(f => {
                 const isVisible = f.name.toLowerCase().includes(query);
                 const checkedClass = f.checked ? 'checked' : '';
+                const disabledStyle = f.alreadyConnected ? 'opacity: 0.6; cursor: not-allowed; background: #f3f4f6;' : '';
+                const clickHandler = f.alreadyConnected ? '' : `onclick="event.stopPropagation(); toggleFolder('${f.id}')"`;
+                const tagHtml = f.alreadyConnected ? `<span style="margin-left:auto; font-size:0.75rem; color:#6b7280; background:#e5e7eb; padding:2px 8px; border-radius:12px;">Already Selected</span>` : '';
 
                 const rowHtml = `
-                    <div class="folder-row" onclick="event.stopPropagation(); toggleFolder('${f.id}')">
-                        <div class="folder-checkbox ${checkedClass}"></div>
+                    <div class="folder-row" style="${disabledStyle}" ${clickHandler}>
+                        <div class="folder-checkbox ${checkedClass}" style="${f.alreadyConnected ? 'background:#d1d5db; border-color:#d1d5db;' : ''}"></div>
                         <div style="font-size:1.2rem;">📁</div>
                         <div style="font-size:0.95rem;color:#111827;">${f.name}</div>
+                        ${tagHtml}
                     </div>
                 `;
 
